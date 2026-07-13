@@ -21,14 +21,18 @@ single worker thread indefinitely.
 """
 from __future__ import annotations
 
+import logging
 import tempfile
 import threading
+import time
 import zipfile
 from pathlib import Path
 from typing import Optional
 
 from . import session
 from .client import LitresClient
+
+logger = logging.getLogger(__name__)
 
 _lock = threading.Lock()
 _cancel_event = threading.Event()
@@ -48,6 +52,26 @@ def snapshot() -> dict:
         return {**_state, "log": list(_state["log"])}
 
 
+def _friendly_error(exc: Exception) -> str:
+    """Translate a raw client exception into a short, actionable message
+    for the UI log -- the raw text (a truncated HTML challenge page, a
+    Playwright timeout repr, ...) is logged in full via `logger` but isn't
+    fit to show a non-technical user."""
+    text = str(exc)
+    lower = text.lower()
+    if "ddos-guard" in lower:
+        return "Blocked by litres.ru's anti-bot check (DDoS-Guard) -- wait a bit, then retry this book."
+    if "(403)" in text:
+        return "Blocked by litres.ru (403 Forbidden) -- wait a bit, then retry this book."
+    if "(429)" in text:
+        return "Rate-limited by litres.ru (429) -- wait a few minutes before retrying."
+    if "(401)" in text or "permissionmissing" in lower:
+        return "Session looks expired -- try logging out and back in."
+    if "timeout" in lower:
+        return "Download timed out -- the file may be large or the connection slow."
+    return f"Download failed: {text[:150]}"
+
+
 def start(
     client: LitresClient,
     art_ids: Optional[set] = None,
@@ -64,6 +88,7 @@ def start(
     per book when unavailable."""
     with _lock:
         if _state["status"] == "running":
+            logger.info("Download requested while a job is already running -- ignored")
             return False
         _state.update(
             status="running",
@@ -76,6 +101,12 @@ def start(
         )
     _cancel_event.clear()
 
+    logger.info(
+        "Starting download job: %s, ebook_format=%s, audiobook_format=%s",
+        f"{len(art_ids)} selected book(s)" if art_ids is not None else "entire library",
+        preferred_ext,
+        preferred_file_type,
+    )
     session.submit(_run, client, art_ids, preferred_ext, preferred_file_type)
     return True
 
@@ -86,6 +117,7 @@ def cancel() -> bool:
     with _lock:
         if _state["status"] != "running":
             return False
+    logger.info("Cancellation requested")
     _cancel_event.set()
     return True
 
@@ -115,28 +147,45 @@ def _run(
                 title = art.get("title") or str(art_id)
                 with _lock:
                     _state["current_title"] = title
+                logger.info("Downloading %r (art %s)", title, art_id)
 
                 try:
                     files = client.get_files(art_id)
                     best = client.pick_best_file(files, preferred_ext, preferred_file_type)
                     if best is None:
+                        reason = "No downloadable file for this title on litres.ru (rights-limited or preview-only)."
+                        logger.info("Skipping %r (art %s): %s", title, art_id, reason)
                         with _lock:
-                            _state["log"].append({"title": title, "status": "skipped"})
+                            _state["log"].append({"title": title, "status": "skipped", "reason": reason})
                         continue
 
                     ext = client.file_extension(best)
                     size_mb = round(best.get("size", 0) / 1e6, 1)
                     safe_title = "".join(c for c in title if c.isalnum() or c in " ._-")[:150]
                     dest = workdir / f"{safe_title}.{ext}"
+                    started_at = time.monotonic()
                     client.download_file(art_id, best["id"], dest.name, dest)
+                    elapsed = time.monotonic() - started_at
                     zf.write(dest, arcname=dest.name)
                     dest.unlink()
+                    logger.info(
+                        "Downloaded %r (art %s): %s, %.1f MB in %.1fs",
+                        title, art_id, ext, size_mb, elapsed,
+                    )
                 except Exception as exc:
-                    # One book failing (e.g. a stalled/timed-out transfer)
-                    # shouldn't sink the whole job -- log it and move on.
+                    # One book failing (e.g. a stalled/timed-out transfer, or
+                    # an anti-bot block) shouldn't sink the whole job -- log
+                    # the raw detail for diagnosis and show a friendly
+                    # message + reason to the user, then move on.
+                    logger.warning("Download failed for %r (art %s): %s", title, art_id, exc)
                     with _lock:
                         _state["log"].append(
-                            {"title": title, "status": "error", "error": str(exc)[:200]}
+                            {
+                                "title": title,
+                                "status": "error",
+                                "error": _friendly_error(exc),
+                                "detail": str(exc)[:300],
+                            }
                         )
                     continue
 
@@ -149,7 +198,14 @@ def _run(
             _state["status"] = "cancelled" if cancelled else "done"
             _state["current_title"] = None
             _state["zip_path"] = str(zip_path)
+        done, total_logged = _state["done"], len(_state["log"])
+        logger.info(
+            "Download job %s: %d/%d book(s) succeeded, zip=%s",
+            "cancelled" if cancelled else "finished",
+            done, total_logged, zip_path,
+        )
     except Exception as exc:
+        logger.exception("Download job crashed")
         with _lock:
             _state["status"] = "error"
             _state["error"] = str(exc)

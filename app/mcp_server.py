@@ -17,6 +17,7 @@ on anyio's own worker-thread pool (a different pool), strictly before the
 """
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 
@@ -111,4 +112,10 @@ async def download_book(art_id: int) -> dict:
 
 
 if __name__ == "__main__":
+    # Logs go to stderr, not stdout -- stdout is the MCP stdio transport
+    # itself, and any stray log line there would corrupt the protocol stream.
+    logging.basicConfig(
+        level=os.environ.get("LITRES_LOG_LEVEL", "INFO").upper(),
+        format="%(asctime)s %(levelname)-8s %(name)s: %(message)s",
+    )
     mcp.run()

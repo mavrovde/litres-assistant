@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.2.0] - Bookshelf UI, sorting/filtering, and clearer diagnostics
+
+### Added
+- Library browser redesigned as a "bookshelf" grid of book covers (in place
+  of a narrow single-column list), showing far more titles on screen at
+  once and using the freed-up width of a wider page layout.
+- Sort library by title, author, or size, and filter by e-book vs.
+  audiobook, alongside the existing title/author search.
+- Structured logging (Python `logging`) throughout the login flow, library
+  listing, and download job -- login attempts, per-page library fetches,
+  per-book download start/success/failure/skip, and job completion are now
+  all logged with context (art id, title, timing), configurable via
+  `LITRES_LOG_LEVEL`.
+
+### Changed
+- Per-book download errors and skips in the UI's progress log now show a
+  short, actionable reason (e.g. "Blocked by litres.ru's anti-bot check
+  (DDoS-Guard) -- wait a bit, then retry this book.") instead of a generic
+  "failed"/"no file"; the raw underlying error is still logged in full and
+  available as a tooltip.
+- Clarified the "Preferred formats" helper text to explicitly say a book
+  missing your chosen format is downloaded in the next-best format instead
+  of being skipped.
+
 ## [0.1.0] - Initial release
 
 ### Added

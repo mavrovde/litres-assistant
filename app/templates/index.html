@@ -25,6 +25,9 @@
       --warning-soft: #fdf1dd;
       --danger: #d1293d;
       --danger-soft: #fce9eb;
+      --wood: #b3813f;
+      --wood-dark: #8a6230;
+      --wood-soft: #f6ecdc;
       --radius-lg: 20px;
       --radius-md: 14px;
       --radius-sm: 10px;
@@ -105,6 +108,7 @@
     .session-chip { display: flex; align-items: center; gap: 0.7rem; font-size: 0.88rem; }
 
     .page { max-width: 780px; margin: 0 auto; padding: 2rem 1.5rem 0; }
+    .page.wide { max-width: 1180px; }
 
     /* -- Hero (logged out) -- */
     .hero { text-align: center; padding: 3rem 1rem 1rem; }
@@ -132,43 +136,86 @@
     .defaults-strip .group { display: flex; align-items: center; gap: 0.5rem; }
     .defaults-strip .group span { color: var(--text-muted); }
 
-    /* -- Library card -- */
-    .search-wrap { position: relative; max-width: 260px; }
+    /* -- Library toolbar -- */
+    .search-wrap { position: relative; max-width: 260px; flex: 1; }
     .search-wrap input { padding-left: 2.1rem; }
     .search-wrap::before {
       content: "⌕"; position: absolute; left: 0.75rem; top: 50%; transform: translateY(-50%);
       color: var(--text-faint); font-size: 1.1rem;
     }
+    .toolbar-right { display: flex; align-items: center; gap: 0.6rem; flex-wrap: wrap; }
+    .filter-pills { display: flex; gap: 0.4rem; }
+    .pill {
+      background: var(--surface); border: 1.5px solid var(--border); border-radius: 999px;
+      padding: 0.4rem 0.85rem; font-size: 0.82rem; font-weight: 600; color: var(--text-muted); cursor: pointer;
+    }
+    .pill:hover { background: var(--surface-hover); }
+    .pill.active { background: var(--accent-soft); border-color: #d9d6fb; color: var(--accent); }
 
-    #book-list { max-height: 400px; overflow-y: auto; margin: 0 -0.5rem; }
-    .book-row {
-      display: flex; align-items: center; gap: 0.85rem;
-      padding: 0.6rem 0.5rem;
+    /* -- Bookshelf grid -- */
+    #book-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+      grid-auto-rows: 236px;
+      gap: 34px 16px;
+      max-height: 64vh;
+      min-height: 260px;
+      overflow-y: auto;
+      margin: 0 -0.5rem;
+      padding: 6px 0.5rem 30px;
+      border-radius: var(--radius-md);
+      background-color: var(--wood-soft);
+      background-attachment: local;
+      background-image: repeating-linear-gradient(
+        to bottom,
+        transparent 0, transparent 236px,
+        rgba(20,20,40,0.08) 236px, rgba(20,20,40,0.08) 240px,
+        var(--wood) 240px, var(--wood) 256px,
+        var(--wood-dark) 256px, var(--wood-dark) 260px,
+        transparent 260px, transparent 270px
+      );
+    }
+    .book-card {
+      position: relative;
+      display: flex; flex-direction: column; align-items: center;
+      padding: 8px 6px 4px;
       border-radius: var(--radius-sm);
       cursor: pointer;
       border: 1.5px solid transparent;
+      transition: transform 0.12s ease, border-color 0.12s ease, background 0.12s ease;
     }
-    .book-row:hover { background: var(--surface-hover); }
-    .book-row.selected { background: var(--accent-soft); border-color: #d9d6fb; }
-    .book-row input[type=checkbox] {
-      flex-shrink: 0; width: 18px; height: 18px; accent-color: var(--accent); cursor: pointer;
+    .book-card:hover { transform: translateY(-3px); }
+    .book-card.selected { border-color: #d9d6fb; background: rgba(255,255,255,0.55); }
+    .book-cover-wrap {
+      position: relative; width: 96px; height: 148px; margin-bottom: 8px;
+      transition: transform 0.12s ease;
     }
+    .book-card.selected .book-cover-wrap { transform: translateY(-6px); }
     .book-cover {
-      width: 38px; height: 52px; object-fit: cover; border-radius: 5px; flex-shrink: 0;
-      background: var(--border); box-shadow: var(--shadow-sm);
+      width: 100%; height: 100%; object-fit: cover; border-radius: 3px 7px 7px 3px; display: block;
+      background: var(--border); box-shadow: -3px 4px 6px -2px rgba(20,20,40,0.35), var(--shadow-sm);
     }
-    .book-cover.placeholder { display: flex; align-items: center; justify-content: center; font-size: 1.2rem; }
-    .book-meta { display: flex; flex-direction: column; min-width: 0; flex: 1; }
-    .book-title { font-size: 0.94rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .book-authors { font-size: 0.8rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .type-tag {
-      flex-shrink: 0; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em;
-      padding: 0.2rem 0.5rem; border-radius: 999px;
+    .book-cover.placeholder { display: flex; align-items: center; justify-content: center; font-size: 2rem; }
+    .book-checkbox {
+      position: absolute; top: -7px; left: -7px; width: 22px; height: 22px; border-radius: 50%;
+      background: white; box-shadow: var(--shadow-sm); display: flex; align-items: center; justify-content: center;
     }
-    .type-tag.audio { background: var(--warning-soft); color: var(--warning); }
-    .type-tag.book { background: var(--accent-soft); color: var(--accent); }
-    .book-size { flex-shrink: 0; font-size: 0.78rem; color: var(--text-faint); min-width: 3.6rem; text-align: right; }
-    .empty-state { text-align: center; padding: 2.5rem 1rem; color: var(--text-muted); }
+    .book-checkbox input { width: 15px; height: 15px; margin: 0; accent-color: var(--accent); cursor: pointer; }
+    .book-type-dot {
+      position: absolute; bottom: -6px; right: -6px; font-size: 0.75rem; line-height: 1;
+      padding: 0.25rem; border-radius: 50%; background: white; box-shadow: var(--shadow-sm);
+    }
+    .book-title-g {
+      font-size: 0.82rem; font-weight: 600; text-align: center; line-height: 1.25;
+      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+      max-height: 2.6em; width: 100%;
+    }
+    .book-authors-g {
+      font-size: 0.72rem; color: var(--text-muted); text-align: center; white-space: nowrap;
+      overflow: hidden; text-overflow: ellipsis; max-width: 100%; margin-top: 2px;
+    }
+    .book-size-g { font-size: 0.68rem; color: var(--text-faint); margin-top: 2px; }
+    .empty-state { grid-column: 1 / -1; text-align: center; padding: 2.5rem 1rem; color: var(--text-muted); }
 
     /* -- Sticky selection bar -- */
     .selection-bar {
@@ -185,7 +232,7 @@
       padding: 0.9rem 1.6rem;
       box-shadow: var(--shadow-md);
       margin-bottom: 0;
-      max-width: 780px;
+      max-width: 1180px;
       width: calc(100% - 3rem);
     }
     .selection-bar-inner .count { font-weight: 700; }
@@ -220,16 +267,17 @@
     #progress-current { color: var(--text-muted); font-size: 0.88rem; min-height: 1.3em; margin: 0.2rem 0 0; }
     #progress-log { max-height: 240px; overflow-y: auto; margin: 1rem 0 0; padding: 0; list-style: none; }
     #progress-log li {
-      display: flex; align-items: center; gap: 0.6rem;
+      display: flex; align-items: flex-start; gap: 0.6rem;
       padding: 0.45rem 0.1rem; font-size: 0.86rem; border-top: 1px solid var(--border);
     }
     #progress-log li:first-child { border-top: none; }
-    #progress-log li .icon { flex-shrink: 0; width: 18px; height: 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.7rem; color: white; }
+    #progress-log li .icon { flex-shrink: 0; width: 18px; height: 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.7rem; color: white; margin-top: 0.1rem; }
     #progress-log li.done .icon { background: var(--success); }
     #progress-log li.skipped .icon { background: var(--warning); }
     #progress-log li.error .icon { background: var(--danger); }
     #progress-log li .title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    #progress-log li .detail { color: var(--text-faint); font-size: 0.8rem; flex-shrink: 0; }
+    #progress-log li .detail { color: var(--text-faint); font-size: 0.8rem; flex-shrink: 0; max-width: 48%; text-align: right; }
+    #progress-log li.error .detail, #progress-log li.skipped .detail { color: var(--text-muted); cursor: help; }
 
     .progress-actions { display: flex; gap: 0.6rem; margin-top: 1rem; }
   </style>
@@ -247,11 +295,11 @@
     {% endif %}
   </div>
 
-  <div class="page">
+  <div class="page{% if logged_in %} wide{% endif %}">
     {% if logged_in %}
       <div class="card">
         <div class="defaults-strip">
-          <strong style="margin-right:0.2rem">Defaults</strong>
+          <strong style="margin-right:0.2rem">Preferred formats</strong>
           <div class="group">
             <span>E-books</span>
             <select id="ebook-format">
@@ -268,24 +316,36 @@
               {% endfor %}
             </select>
           </div>
-          <span class="faint" style="font-size:0.8rem">falls back automatically if unavailable</span>
+          <span class="faint" style="font-size:0.8rem">If a book isn't available in your chosen format, we'll automatically download the next-best format instead of skipping it.</span>
         </div>
       </div>
 
       <div class="card">
         <div class="card-row" style="margin-bottom:1rem">
-          <h2>Your library</h2>
+          <h2>📚 Your bookshelf</h2>
           <div class="search-wrap">
             <input type="search" id="search-box" placeholder="Filter by title or author…">
           </div>
         </div>
-        <div class="card-row" style="margin-bottom:0.5rem">
+        <div class="card-row" style="margin-bottom:0.9rem">
           <span class="muted" style="font-size:0.88rem"><span id="selected-count">Loading…</span> <span id="selected-size"></span></span>
-          <span>
+          <div class="toolbar-right">
+            <div class="filter-pills" id="type-filter">
+              <button type="button" class="pill active" data-type="all">All</button>
+              <button type="button" class="pill" data-type="book">📖 Books</button>
+              <button type="button" class="pill" data-type="audio">🎧 Audio</button>
+            </div>
+            <select id="sort-by">
+              <option value="title-asc">Title (A–Z)</option>
+              <option value="title-desc">Title (Z–A)</option>
+              <option value="author-asc">Author (A–Z)</option>
+              <option value="size-desc">Size (largest first)</option>
+              <option value="size-asc">Size (smallest first)</option>
+            </select>
             <button type="button" class="text-link" id="select-all">Select all</button>
-            &nbsp;·&nbsp;
+            <span class="faint">·</span>
             <button type="button" class="text-link" id="select-none">Select none</button>
-          </span>
+          </div>
         </div>
         <div id="book-list"><div class="empty-state">Loading your library…</div></div>
       </div>
@@ -318,7 +378,7 @@
       </div>
 
       <script>
-        const state = { books: [], selected: new Set(), filter: '' };
+        const state = { books: [], selected: new Set(), filter: '', typeFilter: 'all', sortBy: 'title-asc' };
 
         function escapeHtml(s) {
           const div = document.createElement('div');
@@ -346,32 +406,44 @@
         }
 
         function visibleBooks() {
-          if (!state.filter) return state.books;
-          const f = state.filter.toLowerCase();
-          return state.books.filter(b =>
-            (b.title || '').toLowerCase().includes(f) || (b.authors || '').toLowerCase().includes(f)
-          );
+          let list = state.books;
+          if (state.typeFilter === 'book') list = list.filter(b => !b.is_audio);
+          else if (state.typeFilter === 'audio') list = list.filter(b => b.is_audio);
+          if (state.filter) {
+            const f = state.filter.toLowerCase();
+            list = list.filter(b =>
+              (b.title || '').toLowerCase().includes(f) || (b.authors || '').toLowerCase().includes(f)
+            );
+          }
+          const sorted = list.slice();
+          const collate = (a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' });
+          switch (state.sortBy) {
+            case 'title-desc': sorted.sort((a, b) => collate(b.title || '', a.title || '')); break;
+            case 'author-asc': sorted.sort((a, b) => collate(a.authors || '', b.authors || '')); break;
+            case 'size-desc': sorted.sort((a, b) => (b.size_mb ?? -1) - (a.size_mb ?? -1)); break;
+            case 'size-asc': sorted.sort((a, b) => (a.size_mb ?? Infinity) - (b.size_mb ?? Infinity)); break;
+            default: sorted.sort((a, b) => collate(a.title || '', b.title || '')); break; // title-asc
+          }
+          return sorted;
         }
 
-        function bookRowHtml(b) {
+        function bookCardHtml(b) {
           const cover = b.cover_url
             ? `<img class="book-cover" src="${escapeHtml(b.cover_url)}" alt="" loading="lazy">`
             : `<span class="book-cover placeholder">${b.is_audio ? '🎧' : '📖'}</span>`;
-          const typeTag = b.is_audio
-            ? `<span class="type-tag audio">Audio</span>`
-            : `<span class="type-tag book">Book</span>`;
+          const typeDot = `<span class="book-type-dot" title="${b.is_audio ? 'Audiobook' : 'E-book'}">${b.is_audio ? '🎧' : '📖'}</span>`;
           const sizeText = b.size_mb != null ? `${b.size_mb} MB` : '';
           const selected = state.selected.has(b.id);
           return `
-            <label class="book-row ${selected ? 'selected' : ''}" data-row="${b.id}">
-              <input type="checkbox" data-id="${b.id}" ${selected ? 'checked' : ''}>
-              ${cover}
-              <div class="book-meta">
-                <span class="book-title">${escapeHtml(b.title)}</span>
-                ${b.authors ? `<span class="book-authors">${escapeHtml(b.authors)}</span>` : ''}
+            <label class="book-card ${selected ? 'selected' : ''}" data-row="${b.id}">
+              <div class="book-cover-wrap">
+                ${cover}
+                <span class="book-checkbox"><input type="checkbox" data-id="${b.id}" ${selected ? 'checked' : ''}></span>
+                ${typeDot}
               </div>
-              ${typeTag}
-              <span class="book-size" id="size-${b.id}">${sizeText}</span>
+              <span class="book-title-g" title="${escapeHtml(b.title)}">${escapeHtml(b.title)}</span>
+              ${b.authors ? `<span class="book-authors-g" title="${escapeHtml(b.authors)}">${escapeHtml(b.authors)}</span>` : ''}
+              <span class="book-size-g" id="size-${b.id}">${sizeText}</span>
             </label>
           `;
         }
@@ -396,6 +468,9 @@
               // best-effort -- leave this row's size blank on failure
             }
           }
+          // Sizes load lazily and can change size-based sort order -- only
+          // worth a full re-render for that sort mode, once all sizes are in.
+          if (state.sortBy.startsWith('size')) renderList();
         }
 
         function renderList() {
@@ -411,12 +486,12 @@
             updateSelectedCount();
             return;
           }
-          listEl.innerHTML = books.map(bookRowHtml).join('');
+          listEl.innerHTML = books.map(bookCardHtml).join('');
           listEl.querySelectorAll('input[type=checkbox]').forEach(cb => {
             cb.addEventListener('change', () => {
               const id = Number(cb.dataset.id);
               if (cb.checked) state.selected.add(id); else state.selected.delete(id);
-              cb.closest('.book-row').classList.toggle('selected', cb.checked);
+              cb.closest('.book-card').classList.toggle('selected', cb.checked);
               updateSelectedCount();
             });
           });
@@ -444,6 +519,19 @@
 
         document.getElementById('search-box').addEventListener('input', (e) => {
           state.filter = e.target.value;
+          renderList();
+        });
+
+        document.getElementById('type-filter').addEventListener('click', (e) => {
+          const btn = e.target.closest('.pill');
+          if (!btn) return;
+          state.typeFilter = btn.dataset.type;
+          document.querySelectorAll('#type-filter .pill').forEach(p => p.classList.toggle('active', p === btn));
+          renderList();
+        });
+
+        document.getElementById('sort-by').addEventListener('change', (e) => {
+          state.sortBy = e.target.value;
           renderList();
         });
 
@@ -522,8 +610,12 @@
 
           const logEl = document.getElementById('progress-log');
           logEl.innerHTML = s.log.map(item => {
-            if (item.status === 'skipped') return `<li class="skipped"><span class="icon">!</span><span class="title">${escapeHtml(item.title)}</span><span class="detail">no file</span></li>`;
-            if (item.status === 'error') return `<li class="error"><span class="icon">✗</span><span class="title">${escapeHtml(item.title)}</span><span class="detail">failed</span></li>`;
+            if (item.status === 'skipped') {
+              return `<li class="skipped"><span class="icon">!</span><span class="title">${escapeHtml(item.title)}</span><span class="detail">${escapeHtml(item.reason || 'Skipped -- no file available')}</span></li>`;
+            }
+            if (item.status === 'error') {
+              return `<li class="error"><span class="icon">✗</span><span class="title">${escapeHtml(item.title)}</span><span class="detail" title="${escapeHtml(item.detail || '')}">${escapeHtml(item.error || 'Download failed')}</span></li>`;
+            }
             return `<li class="done"><span class="icon">✓</span><span class="title">${escapeHtml(item.title)}</span><span class="detail">${item.ext}, ${item.size_mb} MB</span></li>`;
           }).join('');
           logEl.scrollTop = logEl.scrollHeight;

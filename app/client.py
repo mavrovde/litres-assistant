@@ -27,6 +27,7 @@ actual file -- verified against a real purchased epub).
 """
 from __future__ import annotations
 
+import logging
 import os
 import time
 from pathlib import Path
@@ -34,6 +35,8 @@ from typing import Iterator, Optional
 from urllib.parse import parse_qs, urlparse
 
 from playwright.sync_api import BrowserContext, sync_playwright
+
+logger = logging.getLogger(__name__)
 
 # These are facts about litres.ru itself, not settings -- not configurable.
 API_BASE = "https://api.litres.ru/foundation/api"
@@ -118,6 +121,7 @@ class LitresClient:
         return resp.ok
 
     def login(self, login: str, password: str) -> None:
+        logger.info("Driving litres.ru login flow for %s", login)
         page = self.context.new_page()
         captured = {}
 
@@ -139,6 +143,7 @@ class LitresClient:
                 page.click("button[type=submit]")
             resp = resp_info.value
             if resp.status != 200:
+                logger.warning("Login POST for %s returned %s", login, resp.status)
                 raise LitresAuthError(f"Login failed ({resp.status}): {resp.text()[:300]}")
             try:
                 page.wait_for_load_state("networkidle", timeout=15000)
@@ -151,6 +156,7 @@ class LitresClient:
                 except Exception:
                     pass
             self._extra_headers = {k: v for k, v in captured.items() if k.lower() not in _DROP_HEADERS}
+            logger.info("Login succeeded for %s (%d app-level headers captured)", login, len(self._extra_headers))
         finally:
             page.remove_listener("request", on_request)
             page.close()
@@ -159,18 +165,24 @@ class LitresClient:
         """Yield every art (book/audiobook/...) the user owns."""
         url = f"{API_BASE}/users/me/arts"
         params = {"limit": limit}
+        page_count, item_count = 0, 0
         while True:
             resp = self._get(url, params=params)
             if not resp.ok:
+                logger.warning("Library fetch failed: HTTP %s", resp.status)
                 raise LitresAuthError(f"Library fetch failed ({resp.status}): {resp.text()[:300]}")
             payload = resp.json().get("payload") or {}
             items = payload.get("data") or []
+            page_count += 1
+            item_count += len(items)
+            logger.debug("Library page %d: %d item(s) (%d total so far)", page_count, len(items), item_count)
             if not items:
                 return
             for item in items:
                 yield item
             next_page = (payload.get("pagination") or {}).get("next_page")
             if not next_page:
+                logger.info("Library listing complete: %d item(s) across %d page(s)", item_count, page_count)
                 return
             # Reuse only the query params (e.g. the `after` cursor) from the
             # server's next-page link against our known-good endpoint --
@@ -182,6 +194,7 @@ class LitresClient:
         """Flat list of {id, extension, file_type, mime, size, is_additional} for one art."""
         resp = self._get(f"{API_BASE}/arts/{art_id}/files/grouped")
         if not resp.ok:
+            logger.warning("File listing failed for art %s: HTTP %s", art_id, resp.status)
             raise LitresAuthError(f"Could not list files for art {art_id} ({resp.status}): {resp.text()[:300]}")
         groups = (resp.json().get("payload") or {}).get("data") or []
         flat = []
@@ -189,6 +202,7 @@ class LitresClient:
             file_type = group.get("file_type")
             for f in group.get("files") or []:
                 flat.append({**f, "file_type": file_type})
+        logger.debug("Art %s: %d file(s) across %d group(s)", art_id, len(flat), len(groups))
         return flat
 
     def pick_best_file(
@@ -225,9 +239,13 @@ class LitresClient:
     ) -> Path:
         segment = "download_book_subscr" if subscr else "download_book"
         url = f"{DOWNLOAD_BASE}/{segment}/{art_id}/{release_file_id}/{filename}"
+        logger.debug("GET %s (timeout=%dms)", url, DOWNLOAD_TIMEOUT_MS)
         resp = self._get(url, timeout=DOWNLOAD_TIMEOUT_MS)
         if not resp.ok:
+            logger.warning("Download request failed for art %s: HTTP %s", art_id, resp.status)
             raise LitresAuthError(f"Download failed for art {art_id} ({resp.status}): {resp.text()[:300]}")
         dest.parent.mkdir(parents=True, exist_ok=True)
-        dest.write_bytes(resp.body())
+        body = resp.body()
+        dest.write_bytes(body)
+        logger.debug("Wrote %d bytes to %s", len(body), dest)
         return dest

@@ -13,6 +13,7 @@ thread; nothing else should call a LitresClient method directly.
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -20,6 +21,8 @@ from typing import Optional
 
 from . import credentials
 from .client import LitresAuthError, LitresClient
+
+logger = logging.getLogger(__name__)
 
 SESSION_STATE_PATH = Path(
     os.environ.get("LITRES_SESSION_FILE", str(Path(__file__).parent.parent / ".litres_session.json"))
@@ -64,6 +67,7 @@ def current_login() -> Optional[str]:
 
 def _restore_session_impl() -> None:
     if _state["client"] is not None:
+        logger.debug("Session already active, skipping restore")
         return  # already restored/logged in this process
 
     if SESSION_STATE_PATH.exists():
@@ -72,24 +76,30 @@ def _restore_session_impl() -> None:
             saved = credentials.load_last()
             _state["client"] = client
             _state["login"] = saved[0] if saved else None
+            logger.info("Restored saved session for %s", _state["login"])
             return
+        logger.info("Saved session cookies are no longer valid, discarding")
         client.close()
 
     saved = credentials.load_last()
     if not saved:
         env_login, env_password = os.environ.get("LITRES_LOGIN"), os.environ.get("LITRES_PASSWORD")
         if not (env_login and env_password):
+            logger.info("No saved session or credentials found -- staying logged out")
             return
         saved = (env_login, env_password)
+        logger.info("Bootstrapping session from LITRES_LOGIN/LITRES_PASSWORD")
     login_id, password = saved
     client = LitresClient()
     try:
         client.login(login_id, password)
     except LitresAuthError:
+        logger.warning("Automatic login for %s failed", login_id)
         client.close()
         return
     client.save_state(SESSION_STATE_PATH)
     _state["client"], _state["login"] = client, login_id
+    logger.info("Logged in as %s and saved session", login_id)
 
 
 def _login_impl(login_id: str, password: str) -> LitresClient:
@@ -97,6 +107,7 @@ def _login_impl(login_id: str, password: str) -> LitresClient:
     try:
         client.login(login_id, password)
     except LitresAuthError:
+        logger.warning("Login failed for %s", login_id)
         client.close()
         raise
     if _state["client"] is not None:
@@ -104,10 +115,12 @@ def _login_impl(login_id: str, password: str) -> LitresClient:
     client.save_state(SESSION_STATE_PATH)
     credentials.save(login_id, password)
     _state["client"], _state["login"] = client, login_id
+    logger.info("Logged in as %s", login_id)
     return client
 
 
 def _logout_impl() -> None:
+    logger.info("Logging out %s", _state["login"])
     if _state["login"]:
         credentials.forget(_state["login"])
     if _state["client"] is not None:

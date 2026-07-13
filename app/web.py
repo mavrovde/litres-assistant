@@ -6,6 +6,7 @@ tool for the account owner, not a multi-user service.
 """
 from __future__ import annotations
 
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import List, Optional
@@ -19,6 +20,8 @@ from pydantic import BaseModel
 
 from . import download_job, session
 from .client import AUDIOBOOK_FILE_TYPES, EBOOK_EXTENSIONS, LitresAuthError
+
+logger = logging.getLogger(__name__)
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
@@ -56,17 +59,20 @@ def do_login(request: Request, login: str = Form(...), password: str = Form(...)
     try:
         session.login(login, password)
     except LitresAuthError as exc:
+        logger.warning("Login attempt failed for %s: %s", login, exc)
         return templates.TemplateResponse(
             request,
             "index.html",
             {"logged_in": False, "login": None, "error": str(exc)},
             status_code=401,
         )
+    logger.info("Login attempt succeeded for %s", login)
     return RedirectResponse("/", status_code=303)
 
 
 @app.post("/logout")
 def do_logout():
+    logger.info("Logout requested for %s", session.current_login())
     session.logout()
     return RedirectResponse("/", status_code=303)
 
@@ -135,12 +141,18 @@ def start_download(req: DownloadRequest):
     if req.art_ids is not None and len(req.art_ids) == 0:
         return JSONResponse({"ok": False, "error": "No books selected"}, status_code=400)
     art_ids = set(req.art_ids) if req.art_ids is not None else None
+    logger.info(
+        "Download requested: %s, ebook_format=%s, audiobook_format=%s",
+        f"{len(art_ids)} book(s)" if art_ids is not None else "entire library",
+        req.ebook_format, req.audiobook_format,
+    )
     started = download_job.start(client, art_ids, req.ebook_format, req.audiobook_format)
     return {"ok": True, "started": started}
 
 
 @app.post("/download/cancel")
 def cancel_download():
+    logger.info("Cancel requested via /download/cancel")
     cancelled = download_job.cancel()
     return {"ok": True, "cancelled": cancelled}
 
