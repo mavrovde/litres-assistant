@@ -4,40 +4,61 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>LitRes Library Downloader</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
   <style>
-    :root { --content-max: 720px; }
+    :root {
+      --content-max: 760px;
+      --pico-font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    }
     main.container { max-width: var(--content-max); }
-    header.hero { text-align: center; padding-bottom: 0; }
-    header.hero p { color: var(--pico-muted-color); }
+    body { -webkit-font-smoothing: antialiased; }
+    h1, h2, h3 { letter-spacing: -0.02em; }
+
+    header.hero { text-align: center; padding-bottom: 0.5rem; }
+    header.hero h1 { font-size: 1.9rem; margin-bottom: 0.25rem; }
+    header.hero p { color: var(--pico-muted-color); font-size: 1.02rem; }
+
+    article { border-radius: 12px; }
 
     .toolbar { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 0.5rem; flex-wrap: wrap; }
-    .toolbar .links a { margin-left: 0.75rem; cursor: pointer; }
+    .toolbar .links a { margin-left: 0.9rem; cursor: pointer; font-weight: 500; }
 
-    #book-list { max-height: 320px; overflow-y: auto; border: 1px solid var(--pico-muted-border-color); border-radius: var(--pico-border-radius); padding: 0.25rem 0.75rem; background: var(--pico-card-background-color); }
-    .book-row { display: flex; align-items: center; gap: 0.6rem; padding: 0.4rem 0; border-bottom: 1px solid var(--pico-muted-border-color); }
+    #book-list { max-height: 360px; overflow-y: auto; border: 1px solid var(--pico-muted-border-color); border-radius: 10px; padding: 0.25rem 0.75rem; background: var(--pico-card-background-color); }
+    .book-row { display: flex; align-items: center; gap: 0.75rem; padding: 0.55rem 0; border-bottom: 1px solid var(--pico-muted-border-color); cursor: pointer; }
     .book-row:last-child { border-bottom: none; }
-    .book-row input[type=checkbox] { margin: 0; }
-    .book-row span { font-size: 0.95rem; }
+    .book-row:hover { background: var(--pico-secondary-background); }
+    .book-row input[type=checkbox] { margin: 0; flex-shrink: 0; }
+    .book-cover { width: 34px; height: 46px; object-fit: cover; border-radius: 4px; flex-shrink: 0; background: var(--pico-muted-border-color); box-shadow: 0 1px 3px rgba(0,0,0,0.15); }
+    .book-cover.placeholder { display: flex; align-items: center; justify-content: center; font-size: 1.1rem; }
+    .book-meta { display: flex; flex-direction: column; min-width: 0; }
+    .book-title { font-size: 0.96rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .book-authors { font-size: 0.82rem; color: var(--pico-muted-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .type-icon { flex-shrink: 0; opacity: 0.75; }
 
     .badge { display: inline-block; padding: 0.15rem 0.6rem; border-radius: 999px; font-size: 0.78rem; font-weight: 600; letter-spacing: 0.02em; }
     .badge-idle { background: var(--pico-muted-border-color); color: var(--pico-muted-color); }
     .badge-running { background: #fff3cd; color: #8a6d00; }
     .badge-done { background: #d4edda; color: #1e7e34; }
     .badge-error { background: #f8d7da; color: #a71d2a; }
+    .badge-cancelled { background: #e2e3e5; color: #41464b; }
 
     #progress-current { color: var(--pico-muted-color); font-size: 0.9rem; min-height: 1.2em; }
-    #progress-log { max-height: 220px; overflow-y: auto; margin: 0.75rem 0 0; padding: 0; list-style: none; border: 1px solid var(--pico-muted-border-color); border-radius: var(--pico-border-radius); }
+    #progress-log { max-height: 220px; overflow-y: auto; margin: 0.75rem 0 0; padding: 0; list-style: none; border: 1px solid var(--pico-muted-border-color); border-radius: 10px; }
     #progress-log li { padding: 0.35rem 0.75rem; font-size: 0.88rem; border-bottom: 1px solid var(--pico-muted-border-color); }
     #progress-log li:last-child { border-bottom: none; }
     #progress-log li.skipped { color: #a86b00; }
     #progress-log li.done { color: #1e7e34; }
+    #progress-log li.error { color: #a71d2a; }
     #progress-log li::before { margin-right: 0.5rem; }
     #progress-log li.done::before { content: "✓"; }
     #progress-log li.skipped::before { content: "⚠"; }
+    #progress-log li.error::before { content: "✗"; }
 
+    .progress-actions { display: flex; gap: 0.6rem; margin-top: 0.75rem; }
     .format-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
-    #download-link { margin-top: 0.75rem; }
     .muted { color: var(--pico-muted-color); font-size: 0.9em; }
     article > h2:first-child, article > header:first-child { margin-top: 0; }
   </style>
@@ -112,9 +133,12 @@
         <p id="progress-current"></p>
         <p id="progress-error" style="color:var(--pico-del-color)"></p>
         <ul id="progress-log"></ul>
-        <a id="download-link" href="/download/file" style="display:none">
-          <button type="button">💾 Save zip file</button>
-        </a>
+        <div class="progress-actions">
+          <button type="button" id="cancel-download" class="outline contrast" style="display:none">Stop</button>
+          <a id="download-link" href="/download/file" style="display:none">
+            <button type="button">💾 Save zip file</button>
+          </a>
+        </div>
       </article>
 
       <script>
@@ -143,7 +167,27 @@
         function visibleBooks() {
           if (!state.filter) return state.books;
           const f = state.filter.toLowerCase();
-          return state.books.filter(b => (b.title || '').toLowerCase().includes(f));
+          return state.books.filter(b =>
+            (b.title || '').toLowerCase().includes(f) || (b.authors || '').toLowerCase().includes(f)
+          );
+        }
+
+        function bookRowHtml(b) {
+          const cover = b.cover_url
+            ? `<img class="book-cover" src="${escapeHtml(b.cover_url)}" alt="" loading="lazy">`
+            : `<span class="book-cover placeholder">${b.is_audio ? '🎧' : '📖'}</span>`;
+          const typeIcon = `<span class="type-icon" title="${b.is_audio ? 'Audiobook' : 'Book'}">${b.is_audio ? '🎧' : '📖'}</span>`;
+          return `
+            <label class="book-row">
+              <input type="checkbox" data-id="${b.id}" ${state.selected.has(b.id) ? 'checked' : ''}>
+              ${cover}
+              <div class="book-meta">
+                <span class="book-title">${escapeHtml(b.title)}</span>
+                ${b.authors ? `<span class="book-authors">${escapeHtml(b.authors)}</span>` : ''}
+              </div>
+              ${typeIcon}
+            </label>
+          `;
         }
 
         function renderList() {
@@ -159,12 +203,7 @@
             updateSelectedCount();
             return;
           }
-          listEl.innerHTML = books.map(b => `
-            <label class="book-row">
-              <input type="checkbox" data-id="${b.id}" ${state.selected.has(b.id) ? 'checked' : ''}>
-              <span>${escapeHtml(b.title)}</span>
-            </label>
-          `).join('');
+          listEl.innerHTML = books.map(bookRowHtml).join('');
           listEl.querySelectorAll('input[type=checkbox]').forEach(cb => {
             cb.addEventListener('change', () => {
               const id = Number(cb.dataset.id);
@@ -218,6 +257,10 @@
           pollStatus();
         });
 
+        document.getElementById('cancel-download').addEventListener('click', async () => {
+          await fetch('/download/cancel', { method: 'POST' });
+        });
+
         async function pollStatus() {
           const resp = await fetch('/download/status');
           const s = await resp.json();
@@ -229,7 +272,7 @@
 
         function renderProgress(s) {
           document.getElementById('progress-section').style.display = 'block';
-          const labels = { idle: 'Idle', running: 'Downloading…', done: 'Done', error: 'Error' };
+          const labels = { idle: 'Idle', running: 'Downloading…', done: 'Done', error: 'Error', cancelled: 'Stopped' };
           const badge = document.getElementById('progress-badge');
           badge.textContent = labels[s.status] || s.status;
           badge.className = 'badge badge-' + s.status;
@@ -245,13 +288,15 @@
             s.current_title ? `Downloading: ${s.current_title}` : '';
 
           const logEl = document.getElementById('progress-log');
-          logEl.innerHTML = s.log.map(item => item.status === 'skipped'
-            ? `<li class="skipped">${escapeHtml(item.title)} — no downloadable file</li>`
-            : `<li class="done">${escapeHtml(item.title)} — ${item.ext}, ${item.size_mb} MB</li>`
-          ).join('');
+          logEl.innerHTML = s.log.map(item => {
+            if (item.status === 'skipped') return `<li class="skipped">${escapeHtml(item.title)} — no downloadable file</li>`;
+            if (item.status === 'error') return `<li class="error">${escapeHtml(item.title)} — failed (${escapeHtml(item.error || 'error')})</li>`;
+            return `<li class="done">${escapeHtml(item.title)} — ${item.ext}, ${item.size_mb} MB</li>`;
+          }).join('');
           logEl.scrollTop = logEl.scrollHeight;
 
-          document.getElementById('download-link').style.display = s.status === 'done' ? 'inline-block' : 'none';
+          document.getElementById('cancel-download').style.display = s.status === 'running' ? 'inline-block' : 'none';
+          document.getElementById('download-link').style.display = (s.status === 'done' || s.status === 'cancelled') && s.done > 0 ? 'inline-block' : 'none';
           document.getElementById('progress-error').textContent = s.error || '';
         }
 
@@ -259,7 +304,7 @@
           await loadLibrary();
           const resp = await fetch('/download/status');
           const s = await resp.json();
-          if (s.status === 'running' || s.status === 'done') {
+          if (s.status === 'running' || s.status === 'done' || s.status === 'cancelled') {
             renderProgress(s);
             if (s.status === 'running') pollStatus();
           }

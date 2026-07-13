@@ -212,9 +212,13 @@ class LitresClient:
     ) -> Path:
         segment = "download_book_subscr" if subscr else "download_book"
         url = f"{DOWNLOAD_BASE}/{segment}/{art_id}/{release_file_id}/{filename}"
-        # Whole-audiobook bundles can be ~2GB -- the default 30s request
-        # timeout isn't enough even though the transfer itself succeeds.
-        resp = self._get(url, timeout=1800000)
+        # Whole-audiobook bundles can be a few hundred MB to ~2GB -- the
+        # default 30s request timeout isn't enough even on a healthy
+        # transfer. But litres.ru's CDN can also just stall on a specific
+        # file (observed: a 350MB file that never sent a byte and had to be
+        # killed after 20s) -- 5 minutes is generous for a real transfer
+        # without leaving the whole app hung for half an hour on a dead one.
+        resp = self._get(url, timeout=300000)
         if not resp.ok:
             raise LitresAuthError(f"Download failed for art {art_id} ({resp.status}): {resp.text()[:300]}")
         dest.parent.mkdir(parents=True, exist_ok=True)

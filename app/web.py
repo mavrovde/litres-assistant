@@ -72,10 +72,20 @@ def do_logout():
 
 
 def _list_books(client):
-    return [
-        {"id": art.get("id"), "title": art.get("title") or str(art.get("id"))}
-        for art in client.iter_library()
-    ]
+    books = []
+    for art in client.iter_library():
+        authors = [p.get("full_name") for p in (art.get("persons") or []) if p.get("role") == "author"]
+        cover_url = art.get("cover_url")
+        books.append(
+            {
+                "id": art.get("id"),
+                "title": art.get("title") or str(art.get("id")),
+                "authors": ", ".join(a for a in authors if a),
+                "is_audio": art.get("art_type") == 1,
+                "cover_url": f"https://static.litres.ru{cover_url}" if cover_url else None,
+            }
+        )
+    return books
 
 
 @app.get("/library")
@@ -101,6 +111,12 @@ def start_download(req: DownloadRequest):
     art_ids = set(req.art_ids) if req.art_ids else None
     started = download_job.start(client, art_ids, req.ebook_format, req.audiobook_format)
     return {"ok": True, "started": started}
+
+
+@app.post("/download/cancel")
+def cancel_download():
+    cancelled = download_job.cancel()
+    return {"ok": True, "cancelled": cancelled}
 
 
 @app.get("/download/status")

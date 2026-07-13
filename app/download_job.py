@@ -8,6 +8,16 @@ fail with "Cannot switch to a different thread" the moment it touched the
 client. Submitting to the dedicated thread also means /download/start
 returns immediately and the browser polls /download/status instead of
 blocking on one long request.
+
+Cancellation note: `cancel()` is checked between books, so it stops the
+queue promptly if the current book has already finished. It can *not*
+interrupt a single book's download once that HTTP request is in flight --
+Python can't safely preempt a blocking call on another thread, and
+Playwright's sync API only tolerates being touched from the thread that
+created it. That's why client.download_file uses a bounded 5-minute
+timeout (see client.py) rather than a very long one: a stuck transfer
+self-aborts (logged as an error, loop moves on) instead of tying up the
+single worker thread indefinitely.
 """
 from __future__ import annotations
 
@@ -21,12 +31,13 @@ from . import session
 from .client import LitresClient
 
 _lock = threading.Lock()
+_cancel_event = threading.Event()
 _state = {
-    "status": "idle",  # idle | running | done | error
+    "status": "idle",  # idle | running | done | error | cancelled
     "current_title": None,
     "done": 0,
     "total": None,  # known when a specific selection was requested
-    "log": [],  # [{"title", "ext"?, "size_mb"?, "status": "done"|"skipped"}]
+    "log": [],  # [{"title", "ext"?, "size_mb"?, "status": "done"|"skipped"|"error"}]
     "error": None,
     "zip_path": None,
 }
@@ -63,8 +74,19 @@ def start(
             error=None,
             zip_path=None,
         )
+    _cancel_event.clear()
 
     session.submit(_run, client, art_ids, preferred_ext, preferred_file_type)
+    return True
+
+
+def cancel() -> bool:
+    """Request the running job to stop before its next book. Returns False
+    if nothing is running."""
+    with _lock:
+        if _state["status"] != "running":
+            return False
+    _cancel_event.set()
     return True
 
 
@@ -81,7 +103,12 @@ def _run(
         # avoids burning CPU re-deflating gigabytes of mp3/epub for no size
         # benefit.
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_STORED) as zf:
+            cancelled = False
             for art in client.iter_library():
+                if _cancel_event.is_set():
+                    cancelled = True
+                    break
+
                 art_id = art.get("id")
                 if art_ids and art_id not in art_ids:
                     continue
@@ -89,20 +116,29 @@ def _run(
                 with _lock:
                     _state["current_title"] = title
 
-                files = client.get_files(art_id)
-                best = client.pick_best_file(files, preferred_ext, preferred_file_type)
-                if best is None:
-                    with _lock:
-                        _state["log"].append({"title": title, "status": "skipped"})
-                    continue
+                try:
+                    files = client.get_files(art_id)
+                    best = client.pick_best_file(files, preferred_ext, preferred_file_type)
+                    if best is None:
+                        with _lock:
+                            _state["log"].append({"title": title, "status": "skipped"})
+                        continue
 
-                ext = client.file_extension(best)
-                size_mb = round(best.get("size", 0) / 1e6, 1)
-                safe_title = "".join(c for c in title if c.isalnum() or c in " ._-")[:150]
-                dest = workdir / f"{safe_title}.{ext}"
-                client.download_file(art_id, best["id"], dest.name, dest)
-                zf.write(dest, arcname=dest.name)
-                dest.unlink()
+                    ext = client.file_extension(best)
+                    size_mb = round(best.get("size", 0) / 1e6, 1)
+                    safe_title = "".join(c for c in title if c.isalnum() or c in " ._-")[:150]
+                    dest = workdir / f"{safe_title}.{ext}"
+                    client.download_file(art_id, best["id"], dest.name, dest)
+                    zf.write(dest, arcname=dest.name)
+                    dest.unlink()
+                except Exception as exc:
+                    # One book failing (e.g. a stalled/timed-out transfer)
+                    # shouldn't sink the whole job -- log it and move on.
+                    with _lock:
+                        _state["log"].append(
+                            {"title": title, "status": "error", "error": str(exc)[:200]}
+                        )
+                    continue
 
                 with _lock:
                     _state["done"] += 1
@@ -110,7 +146,7 @@ def _run(
                         {"title": title, "ext": ext, "size_mb": size_mb, "status": "done"}
                     )
         with _lock:
-            _state["status"] = "done"
+            _state["status"] = "cancelled" if cancelled else "done"
             _state["current_title"] = None
             _state["zip_path"] = str(zip_path)
     except Exception as exc:
