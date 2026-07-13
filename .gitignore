@@ -1,0 +1,6 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+.litres_session.json
+.claude/settings.local.json

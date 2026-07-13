@@ -1,0 +1,209 @@
+"""Client for litres.ru driven through a real Chromium session (Playwright).
+
+Plain `requests` POSTs to the login endpoint get rejected with a generic
+"Incorrect user data" error regardless of whether the credentials are right
+-- litres.ru sets DataDome-style bot-protection cookies (`__ddg9_`,
+`__ddg1_`) that only a real, JS-executing browser can obtain. So login is
+driven through an actual headless Chromium page (filling the real login
+form, confirmed selectors: `input[name=email]` then `input[name=pwd]`).
+
+Being logged in isn't enough either: the API gateway also requires a set of
+app-level headers (`app-id`, `session-id`, `client-host`, `ui-currency`,
+`ui-language-code`, `ab-tests-flags`, `basket`, `wishlist`,
+`safemode-enabled`, ...) that the site's own frontend code attaches to every
+call -- Playwright's request client doesn't add these on its own, and they
+aren't things a script can safely invent (they 403 with "PermissionMissing"
+if missing/wrong). So right after login we capture the header set from a
+request the site's *own* JS makes automatically (`GET .../users/me`) and
+replay it on subsequent calls -- this is our own already-authenticated
+traffic, just reused, not a forged fingerprint.
+
+Endpoints and response shapes below were all confirmed against a real
+account: `GET .../users/me/arts` (paginated via `payload.pagination.next_page`,
+items in `payload.data`), `GET .../arts/{id}/files/grouped` (format options
+grouped under `payload.data[].files[]`), and
+`GET /download_book/{art_id}/{release_file_id}/{name}.{ext}` (streams the
+actual file -- verified against a real purchased epub).
+"""
+from __future__ import annotations
+
+import time
+from pathlib import Path
+from typing import Iterator, Optional
+from urllib.parse import parse_qs, urlparse
+
+from playwright.sync_api import BrowserContext, sync_playwright
+
+API_BASE = "https://api.litres.ru/foundation/api"
+DOWNLOAD_BASE = "https://www.litres.ru"
+LOGIN_PAGE = "https://www.litres.ru/auth/login"
+
+# Preferred download format per book, in order -- first one actually
+# available (and not a "sample"/additional file) wins.
+PREFERRED_EXTENSIONS = ("epub", "fb2.zip", "mobi.prc", "a4.pdf", "fb3", "txt.zip")
+
+# Audiobooks are grouped by `file_type` instead of a per-file `extension`
+# (single chapters live under e.g. "standard_quality_mp3"/31 files -- these
+# whole-book bundle types are what we actually want, not one chapter).
+PREFERRED_FILE_TYPES = ("zip_with_mp3", "mobile_version_mp4")
+EXT_BY_FILE_TYPE = {"zip_with_mp3": "zip", "mobile_version_mp4": "m4b"}
+
+# Headers Playwright/the transport layer already manages correctly on its
+# own -- copying them from a captured request would just fight the request
+# library (stale content-length, wrong host on a different endpoint, etc).
+_DROP_HEADERS = {
+    "cookie",
+    "host",
+    "content-length",
+    "content-type",
+    "connection",
+    "accept-encoding",
+}
+
+
+class LitresAuthError(RuntimeError):
+    """Login failed, or an existing session is no longer valid."""
+
+
+class LitresClient:
+    """Logs into litres.ru and pulls the caller's own purchased library.
+
+    One instance = one Chromium browser context. The context's cookies
+    (including the DataDome challenge cookies) can be persisted to disk via
+    `save_state`/loaded via `storage_state_path` so a fresh login isn't
+    needed on every run. The app-level headers captured during `login()`
+    are *not* persisted -- they're cheap to recapture and may rotate.
+    """
+
+    def __init__(self, storage_state_path: Optional[Path] = None):
+        self._pw = sync_playwright().start()
+        self._browser = self._pw.chromium.launch(headless=True)
+        state = str(storage_state_path) if storage_state_path and storage_state_path.exists() else None
+        self.context: BrowserContext = self._browser.new_context(storage_state=state)
+        self._extra_headers: dict = {}
+
+    def close(self) -> None:
+        self.context.close()
+        self._browser.close()
+        self._pw.stop()
+
+    def save_state(self, path: Path) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        self.context.storage_state(path=str(path))
+
+    def _get(self, url: str, **kwargs):
+        headers = {**self._extra_headers, **kwargs.pop("headers", {})}
+        return self.context.request.get(url, headers=headers, **kwargs)
+
+    def is_logged_in(self) -> bool:
+        if not self._extra_headers:
+            return False
+        resp = self._get(f"{API_BASE}/users/me")
+        return resp.ok
+
+    def login(self, login: str, password: str) -> None:
+        page = self.context.new_page()
+        captured = {}
+
+        def on_request(req):
+            if not captured and req.method == "GET" and req.url.endswith("/foundation/api/users/me"):
+                captured.update(req.headers)
+
+        page.on("request", on_request)
+        try:
+            page.goto(LOGIN_PAGE, wait_until="networkidle", timeout=30000)
+            page.fill("input[name=email]", login)
+            page.click("button[type=submit]")
+            page.wait_for_selector("input[name=pwd]", timeout=15000)
+            page.fill("input[name=pwd]", password)
+            with page.expect_response(
+                lambda r: "auth/login" in r.url and r.request.method == "POST",
+                timeout=15000,
+            ) as resp_info:
+                page.click("button[type=submit]")
+            resp = resp_info.value
+            if resp.status != 200:
+                raise LitresAuthError(f"Login failed ({resp.status}): {resp.text()[:300]}")
+            try:
+                page.wait_for_load_state("networkidle", timeout=15000)
+            except Exception:
+                pass
+            if not captured:
+                # The SPA didn't auto-fetch the profile this time -- force it.
+                try:
+                    page.reload(wait_until="networkidle", timeout=30000)
+                except Exception:
+                    pass
+            self._extra_headers = {k: v for k, v in captured.items() if k.lower() not in _DROP_HEADERS}
+        finally:
+            page.remove_listener("request", on_request)
+            page.close()
+
+    def iter_library(self, limit: int = 100) -> Iterator[dict]:
+        """Yield every art (book/audiobook/...) the user owns."""
+        url = f"{API_BASE}/users/me/arts"
+        params = {"limit": limit}
+        while True:
+            resp = self._get(url, params=params)
+            if not resp.ok:
+                raise LitresAuthError(f"Library fetch failed ({resp.status}): {resp.text()[:300]}")
+            payload = resp.json().get("payload") or {}
+            items = payload.get("data") or []
+            if not items:
+                return
+            for item in items:
+                yield item
+            next_page = (payload.get("pagination") or {}).get("next_page")
+            if not next_page:
+                return
+            # Reuse only the query params (e.g. the `after` cursor) from the
+            # server's next-page link against our known-good endpoint --
+            # the path portion of `next_page` doesn't match our base URL.
+            params = {k: v[0] for k, v in parse_qs(urlparse(next_page).query).items()}
+            time.sleep(0.3)  # personal-use client, not a scraper -- don't hammer the API
+
+    def get_files(self, art_id) -> list:
+        """Flat list of {id, extension, file_type, mime, size, is_additional} for one art."""
+        resp = self._get(f"{API_BASE}/arts/{art_id}/files/grouped")
+        if not resp.ok:
+            raise LitresAuthError(f"Could not list files for art {art_id} ({resp.status}): {resp.text()[:300]}")
+        groups = (resp.json().get("payload") or {}).get("data") or []
+        flat = []
+        for group in groups:
+            file_type = group.get("file_type")
+            for f in group.get("files") or []:
+                flat.append({**f, "file_type": file_type})
+        return flat
+
+    def pick_best_file(self, files: list) -> Optional[dict]:
+        candidates = [f for f in files if not f.get("is_additional")] or files
+
+        # Whole-book bundles (audiobooks) take priority over per-chapter files.
+        by_type = {f["file_type"]: f for f in candidates if f.get("file_type")}
+        for file_type in PREFERRED_FILE_TYPES:
+            if file_type in by_type:
+                return by_type[file_type]
+
+        by_ext = {f["extension"]: f for f in candidates if f.get("extension")}
+        for ext in PREFERRED_EXTENSIONS:
+            if ext in by_ext:
+                return by_ext[ext]
+        return candidates[0] if candidates else None
+
+    @staticmethod
+    def file_extension(file_entry: dict) -> str:
+        return file_entry.get("extension") or EXT_BY_FILE_TYPE.get(file_entry.get("file_type")) or "fb2"
+
+    def download_file(
+        self, art_id, release_file_id, filename: str, dest: Path, subscr: bool = False
+    ) -> Path:
+        segment = "download_book_subscr" if subscr else "download_book"
+        url = f"{DOWNLOAD_BASE}/{segment}/{art_id}/{release_file_id}/{filename}"
+        # Whole-audiobook bundles can be ~2GB -- the default 30s request
+        # timeout isn't enough even though the transfer itself succeeds.
+        resp = self._get(url, timeout=1800000)
+        if not resp.ok:
+            raise LitresAuthError(f"Download failed for art {art_id} ({resp.status}): {resp.text()[:300]}")
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(resp.body())
+        return dest
