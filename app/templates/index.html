@@ -508,7 +508,11 @@
             if (b.size_mb != null) sumMb += b.size_mb;
             else unknown += 1;
           }
-          const sizeSummary = n === 0 ? '' : `(~${formatSize(sumMb)}${unknown > 0 ? `, ${unknown} estimating…` : ''})`;
+          // `unknown` books haven't had their size fetched yet (sizes load
+          // lazily in the background, see fetchSizesInBackground) -- say so
+          // explicitly, since a bare number here previously read as
+          // unexplained "estimating" noise.
+          const sizeSummary = n === 0 ? '' : `(~${formatSize(sumMb)} so far${unknown > 0 ? `, size of ${unknown} more still loading…` : ''})`;
           document.getElementById('selected-size').textContent = sizeSummary;
 
           const bar = document.getElementById('selection-bar');
