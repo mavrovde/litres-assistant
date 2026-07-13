@@ -19,8 +19,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 
-from . import download_job, session
-from .client import AUDIOBOOK_FILE_TYPES, EBOOK_EXTENSIONS, LitresAuthError
+from . import cache, download_job, session
+from .client import AUDIOBOOK_FILE_TYPES, EBOOK_EXTENSIONS, LitresAuthError, LitresClient
 
 logger = logging.getLogger(__name__)
 
@@ -97,17 +97,37 @@ def _list_books(client):
 
 
 @app.get("/library")
-def get_library():
+def get_library(refresh: bool = False):
     client = session.current_client()
     if client is None:
         return JSONResponse({"ok": False, "error": "Not logged in"}, status_code=401)
-    books = session.run(_list_books, client)
+    if not refresh:
+        cached = cache.get_library()
+        if cached is not None:
+            return {"ok": True, "books": cached}
+    try:
+        books = session.run(_list_books, client)
+    except Exception as exc:
+        # A transient network blip, an anti-bot block, or a session that
+        # was replaced (logout/re-login) mid-request should surface as a
+        # clean error the frontend can retry -- not a raw 500 with a
+        # traceback (the client object itself may be a stale, already-
+        # closed one at this point; see session.py's docstring).
+        logger.warning("Library fetch failed: %s", exc)
+        return JSONResponse({"ok": False, "error": "Could not load your library -- try again in a moment."}, status_code=503)
+    cache.set_library(books)
     return {"ok": True, "books": books}
 
 
 def _book_size_mb(client, art_id):
     files = client.get_files(art_id)
     best = client.pick_best_file(files)
+    size = best.get("size") if best else None
+    return round(size / 1e6, 1) if size else None, files
+
+
+def _size_from_files(files):
+    best = LitresClient.pick_best_file(None, files)
     size = best.get("size") if best else None
     return round(size / 1e6, 1) if size else None
 
@@ -122,8 +142,24 @@ def get_book_size(art_id: int):
     client = session.current_client()
     if client is None:
         return JSONResponse({"ok": False, "error": "Not logged in"}, status_code=401)
-    size_mb = session.run(_book_size_mb, client, art_id)
-    return {"ok": True, "size_mb": size_mb}
+    cached_files = cache.get_files(art_id)
+    if cached_files is not None:
+        # No need to even touch the dedicated Playwright thread for a cache
+        # hit -- this can run entirely on the request's own async handler,
+        # so it stays instant even while that thread is busy downloading.
+        # `cached` tells the frontend's paced sweep (app.js) it didn't just
+        # hit litres.ru, so it doesn't need to wait before its next request.
+        return {"ok": True, "size_mb": _size_from_files(cached_files), "cached": True}
+    try:
+        size_mb, files = session.run(_book_size_mb, client, art_id)
+    except Exception as exc:
+        # Best-effort -- the frontend already treats a failed size fetch
+        # as "leave this row blank" (see fetchSizesInBackground in app.js),
+        # so a clean error here is enough; no need to retry server-side.
+        logger.info("Size fetch failed for art %s: %s", art_id, exc)
+        return JSONResponse({"ok": False, "error": "Could not fetch size"}, status_code=503)
+    cache.set_files(art_id, files)
+    return {"ok": True, "size_mb": size_mb, "cached": False}
 
 
 class DownloadRequest(BaseModel):

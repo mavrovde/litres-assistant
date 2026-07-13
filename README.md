@@ -149,6 +149,9 @@ Everything else is optional too, with sensible defaults:
 | `LITRES_DOWNLOAD_TIMEOUT_MS` | `300000` (5 min) | Per-file download timeout. Whole-audiobook bundles can be ~2GB |
 | `LITRES_HEADLESS` | `1` | Set to `0` to watch the login flow in a real Chromium window (debugging) |
 | `LITRES_LOG_LEVEL` | `INFO` | Verbosity of the app's own log lines (login, library listing, download progress) -- one of `DEBUG`/`INFO`/`WARNING`/`ERROR` |
+| `LITRES_CACHE_FILE` | `.litres_cache.json` at the project root | Where the cached library listing/file listings are stored (see **Caching** below) |
+| `LITRES_LIBRARY_CACHE_TTL` | `900` (15 min) | How long the cached library listing stays fresh before a reload re-fetches it |
+| `LITRES_FILES_CACHE_TTL` | `604800` (7 days) | How long a book's cached file listing (size/formats) stays fresh |
 
 `.env` is gitignored and never committed. See **Security notes** below for
 where your credentials/session actually live.

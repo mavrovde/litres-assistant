@@ -22,4 +22,10 @@ if __name__ == "__main__":
     # the logging setup above (root handler + format) once it starts, which
     # is why app.* log lines (session restore, download progress, ...)
     # wouldn't show up even at INFO level.
-    uvicorn.run("app.web:app", host="127.0.0.1", port=port, reload=True, log_config=None)
+    #
+    # reload_dirs=["app"]: without this, uvicorn watches the whole project
+    # (including tests/) -- editing a test file then restarts the live
+    # server mid-session, which silently kills anything in progress (e.g. a
+    # download): the reload replaces the whole process, wiping every
+    # module-level in-memory state (session, download_job, cache).
+    uvicorn.run("app.web:app", host="127.0.0.1", port=port, reload=True, reload_dirs=["app"], log_config=None)

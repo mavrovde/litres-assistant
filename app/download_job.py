@@ -29,7 +29,7 @@ import zipfile
 from pathlib import Path
 from typing import Optional
 
-from . import session
+from . import cache, session
 from .client import LitresClient
 
 logger = logging.getLogger(__name__)
@@ -69,7 +69,25 @@ def _friendly_error(exc: Exception) -> str:
         return "Session looks expired -- try logging out and back in."
     if "timeout" in lower:
         return "Download timed out -- the file may be large or the connection slow."
+    if "event loop is closed" in lower or "already stopped" in lower:
+        return "Session changed while this was running (e.g. a login/logout) -- refresh the page and retry."
+    if "socket hang up" in lower or "econnreset" in lower:
+        return "Connection to litres.ru was interrupted -- wait a bit, then retry."
     return f"Download failed: {text[:150]}"
+
+
+def _iter_books(client):
+    """Prefer the cached library listing (see cache.py) over a fresh full
+    re-sweep -- the browser typically already fetched it moments ago to
+    show the picker, and re-fetching it again here just to start a
+    download would mean two full library sweeps back-to-back for one user
+    action. Only `id`/`title` are used below, and the cached shape
+    (web.py's book list) has both under the same keys as the raw
+    iter_library() art dicts."""
+    cached = cache.get_library()
+    if cached is not None:
+        return cached
+    return list(client.iter_library())
 
 
 def start(
@@ -136,7 +154,7 @@ def _run(
         # benefit.
         with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_STORED) as zf:
             cancelled = False
-            for art in client.iter_library():
+            for art in _iter_books(client):
                 if _cancel_event.is_set():
                     cancelled = True
                     break
@@ -150,7 +168,10 @@ def _run(
                 logger.info("Downloading %r (art %s)", title, art_id)
 
                 try:
-                    files = client.get_files(art_id)
+                    files = cache.get_files(art_id)
+                    if files is None:
+                        files = client.get_files(art_id)
+                        cache.set_files(art_id, files)
                     best = client.pick_best_file(files, preferred_ext, preferred_file_type)
                     if best is None:
                         reason = "No downloadable file for this title on litres.ru (rights-limited or preview-only)."
@@ -208,5 +229,5 @@ def _run(
         logger.exception("Download job crashed")
         with _lock:
             _state["status"] = "error"
-            _state["error"] = str(exc)
+            _state["error"] = _friendly_error(exc)
             _state["current_title"] = None

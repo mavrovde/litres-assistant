@@ -1,5 +1,31 @@
 const state = { books: [], selected: new Set(), filter: '', typeFilter: 'all', sortBy: 'title-asc' };
 
+// -- Activity state machine ------------------------------------------------
+// Checking sizes and downloading both need the one shared progress card
+// (#progress-section) and shouldn't run at the same time -- letting them
+// overlap would mean the bar/badge jumping between two unrelated meanings
+// mid-operation. Modeling "what currently owns the shared UI, and which
+// buttons that disables" as an explicit state machine -- rather than a pair
+// of ad-hoc booleans -- means a future activity (e.g. an export step) is
+// just one more STATE value and one more render*() function, not a new set
+// of enable/disable rules scattered across every button.
+const STATE = { IDLE: 'idle', CHECKING: 'checking', DOWNLOADING: 'downloading' };
+let activity = STATE.IDLE;
+
+// Download's disabled state depends on two independent things (busy or
+// nothing selected), so it's recomputed from both setActivity() and
+// updateSelectedCount() rather than each one guessing the other's state.
+function updateButtons() {
+  const busy = activity !== STATE.IDLE;
+  document.getElementById('refresh-library').disabled = busy;
+  document.getElementById('start-download').disabled = busy || state.selected.size === 0;
+}
+
+function setActivity(next) {
+  activity = next;
+  updateButtons();
+}
+
 function escapeHtml(s) {
   const div = document.createElement('div');
   div.textContent = s == null ? '' : String(s);
@@ -11,14 +37,18 @@ function formatSize(mb) {
   return mb.toFixed(1) + ' MB';
 }
 
-async function loadLibrary() {
+async function loadLibrary(forceRefresh) {
   const listEl = document.getElementById('book-list');
   try {
-    const resp = await fetch('/library');
+    const resp = await fetch(forceRefresh ? '/library?refresh=true' : '/library');
     const data = await resp.json();
     if (!data.ok) throw new Error(data.error || 'failed to load');
     state.books = data.books;
-    state.selected = new Set(data.books.map(b => b.id));
+    // Nothing pre-selected: selecting everything by default made it easy
+    // to kick off a full-library download by accident, and made every page
+    // load look like "select all, then immediately query every book" --
+    // exactly the repeated/bulk request pattern anti-bot checks flag.
+    state.selected = new Set();
     renderList();
   } catch (e) {
     listEl.innerHTML = '<div class="empty-state" style="color:var(--danger)">Could not load your library.</div>';
@@ -68,26 +98,93 @@ function bookCardHtml(b) {
   `;
 }
 
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// A FIFO of book ids still needing a size fetch, processed by the single
+// paced worker below. Selecting a book jumps it to the front (see
+// prioritizeSize) so checking a box doesn't mean waiting for a sweep
+// through however many hundreds of other books come first in the list --
+// without that, pacing the sweep (below) to avoid looking like scraping
+// effectively meant "selected books may never get a size in practice."
+let pendingSizeIds = [];
+
+function prioritizeSize(id) {
+  const idx = pendingSizeIds.indexOf(id);
+  if (idx > 0) {
+    pendingSizeIds.splice(idx, 1);
+    pendingSizeIds.unshift(id);
+  }
+}
+
+function renderChecking(done, total) {
+  document.getElementById('progress-section').style.display = 'block';
+  const badge = document.getElementById('progress-badge');
+  badge.textContent = 'Checking sizes…';
+  badge.className = 'badge badge-running';
+  const bar = document.getElementById('progress-bar');
+  bar.classList.remove('indeterminate');
+  bar.style.width = Math.min(100, (done / total) * 100) + '%';
+  document.getElementById('progress-count').textContent = `${done} / ${total} sizes checked`;
+  document.getElementById('progress-current').textContent =
+    done < total ? 'Cached books resolve instantly; new ones are paced to be gentle on litres.ru.' : '';
+  document.getElementById('progress-error').textContent = '';
+  document.getElementById('progress-log').innerHTML = '';
+  document.getElementById('cancel-download').style.display = 'none';
+  document.getElementById('download-link').style.display = 'none';
+}
+
 async function fetchSizesInBackground() {
+  if (activity !== STATE.IDLE) return; // e.g. a download owns the shared progress card right now
+  setActivity(STATE.CHECKING);
+
   // Sequential on purpose -- the backend has a single dedicated
   // worker thread (Playwright thread-affinity, see session.py), so
   // "parallel" fetches here would just queue up behind each other
   // anyway. Runs after the list is already visible/interactive.
-  for (const b of state.books) {
-    if (b.size_mb != null) continue;
+  //
+  // Paced on purpose too: a large library (hundreds of books) means this
+  // loop fires one request per book every time the page loads -- with no
+  // delay, that's a burst of back-to-back calls that reads a lot like
+  // scraping to litres.ru's anti-bot checks. A small gap between requests
+  // mirrors the pause iter_library already takes between library pages.
+  //
+  // But only when it's actually a live call: the backend caches these
+  // responses (see app/cache.py) and says so via `cached` in the response
+  // -- a cache hit didn't touch litres.ru at all, so there's no reason to
+  // slow down for it. That also means a book's size shows up immediately
+  // whenever it's already known, not just once its turn in the queue
+  // comes up, which matters if someone's choosing what to download based
+  // on size.
+  pendingSizeIds = state.books.filter(b => b.size_mb == null).map(b => b.id);
+  const total = pendingSizeIds.length;
+  let done = 0;
+  if (total > 0) renderChecking(done, total);
+  while (pendingSizeIds.length > 0) {
+    const id = pendingSizeIds.shift();
+    const b = state.books.find(x => x.id === id);
+    if (!b || b.size_mb != null) { done++; continue; } // already resolved elsewhere -- no need to delay for it
+    let wasLiveFetch = true;
     try {
-      const resp = await fetch(`/library/${b.id}/size`);
+      const resp = await fetch(`/library/${id}/size`);
       const data = await resp.json();
       if (data.ok) {
+        wasLiveFetch = !data.cached;
         b.size_mb = data.size_mb;
-        const el = document.getElementById(`size-${b.id}`);
+        const el = document.getElementById(`size-${id}`);
         if (el && b.size_mb != null) el.textContent = `${b.size_mb} MB`;
-        if (state.selected.has(b.id)) updateSelectedCount();
+        if (state.selected.has(id)) updateSelectedCount();
       }
     } catch (e) {
       // best-effort -- leave this row's size blank on failure
     }
+    done++;
+    renderChecking(done, total);
+    if (wasLiveFetch) await sleep(200);
   }
+  if (total > 0) document.getElementById('progress-section').style.display = 'none';
+  setActivity(STATE.IDLE);
   // Sizes load lazily and can change size-based sort order -- only
   // worth a full re-render for that sort mode, once all sizes are in.
   if (state.sortBy.startsWith('size')) renderList();
@@ -110,7 +207,7 @@ function renderList() {
   listEl.querySelectorAll('input[type=checkbox]').forEach(cb => {
     cb.addEventListener('change', () => {
       const id = Number(cb.dataset.id);
-      if (cb.checked) state.selected.add(id); else state.selected.delete(id);
+      if (cb.checked) { state.selected.add(id); prioritizeSize(id); } else { state.selected.delete(id); }
       cb.closest('.book-card').classList.toggle('selected', cb.checked);
       updateSelectedCount();
     });
@@ -135,15 +232,18 @@ function updateSelectedCount() {
   const sizeSummary = n === 0 ? '' : `(~${formatSize(sumMb)} so far${unknown > 0 ? `, size of ${unknown} more still loading…` : ''})`;
   document.getElementById('selected-size').textContent = sizeSummary;
 
-  const bar = document.getElementById('selection-bar');
-  bar.style.display = n > 0 ? 'flex' : 'none';
-  document.getElementById('bar-count').textContent = `${n} book${n === 1 ? '' : 's'} selected`;
-  document.getElementById('bar-size').textContent = sizeSummary;
+  updateButtons();
 }
 
 document.getElementById('search-box').addEventListener('input', (e) => {
   state.filter = e.target.value;
   renderList();
+});
+
+document.getElementById('refresh-library').addEventListener('click', async () => {
+  if (activity !== STATE.IDLE) return;
+  await loadLibrary(true);
+  fetchSizesInBackground(); // claims STATE.CHECKING itself, and re-enables the button when done
 });
 
 document.getElementById('type-filter').addEventListener('click', (e) => {
@@ -160,7 +260,10 @@ document.getElementById('sort-by').addEventListener('change', (e) => {
 });
 
 document.getElementById('select-all').addEventListener('click', () => {
-  visibleBooks().forEach(b => state.selected.add(b.id));
+  // Reverse order so the *first* visible book ends up at the very front of
+  // the pending-size queue after all these prioritizeSize() calls, not the
+  // last one -- still paced one-at-a-time, just reordered.
+  visibleBooks().slice().reverse().forEach(b => { state.selected.add(b.id); prioritizeSize(b.id); });
   renderList();
 });
 document.getElementById('select-none').addEventListener('click', () => {
@@ -169,9 +272,8 @@ document.getElementById('select-none').addEventListener('click', () => {
 });
 
 document.getElementById('start-download').addEventListener('click', async () => {
-  if (state.selected.size === 0) return;
-  const btn = document.getElementById('start-download');
-  btn.disabled = true;
+  if (state.selected.size === 0 || activity !== STATE.IDLE) return;
+  setActivity(STATE.DOWNLOADING);
   try {
     const resp = await fetch('/download/start', {
       method: 'POST',
@@ -185,17 +287,30 @@ document.getElementById('start-download').addEventListener('click', async () => 
     const data = await resp.json();
     if (!data.ok) {
       alert('Could not start download: ' + (data.error || 'unknown error'));
+      setActivity(STATE.IDLE);
       return;
     }
     document.getElementById('progress-section').style.display = 'block';
     document.getElementById('progress-section').scrollIntoView({ behavior: 'smooth' });
     pollStatus();
-  } finally {
-    btn.disabled = false;
+  } catch (e) {
+    setActivity(STATE.IDLE);
   }
 });
 
+// Cancellation only takes effect between books (see download_job.py's
+// module docstring -- an in-flight file transfer can't be interrupted),
+// so clicking Stop can otherwise look completely unresponsive for as long
+// as the current book takes. This flag drives an immediate "Stopping…"
+// state so the click is visibly acknowledged even before anything the
+// backend does actually changes.
+let cancelRequested = false;
+
 document.getElementById('cancel-download').addEventListener('click', async () => {
+  cancelRequested = true;
+  const btn = document.getElementById('cancel-download');
+  btn.disabled = true;
+  btn.textContent = 'Stopping…';
   await fetch('/download/cancel', { method: 'POST' });
 });
 
@@ -205,6 +320,8 @@ async function pollStatus() {
   renderProgress(s);
   if (s.status === 'running') {
     setTimeout(pollStatus, 1000);
+  } else {
+    setActivity(STATE.IDLE);
   }
 }
 
@@ -212,7 +329,8 @@ function renderProgress(s) {
   document.getElementById('progress-section').style.display = 'block';
   const labels = { idle: 'Idle', running: 'Downloading…', done: 'Done', error: 'Error', cancelled: 'Stopped' };
   const badge = document.getElementById('progress-badge');
-  badge.textContent = labels[s.status] || s.status;
+  const stopping = s.status === 'running' && cancelRequested;
+  badge.textContent = stopping ? 'Stopping…' : (labels[s.status] || s.status);
   badge.className = 'badge badge-' + s.status;
 
   const total = s.total != null ? s.total : (state.selected.size || null);
@@ -229,8 +347,9 @@ function renderProgress(s) {
     bar.style.width = s.status === 'done' ? '100%' : '0%';
   }
 
-  document.getElementById('progress-current').textContent =
-    s.current_title ? `Downloading: ${s.current_title}` : '';
+  document.getElementById('progress-current').textContent = s.current_title
+    ? `Downloading: ${s.current_title}` + (stopping ? ' -- stopping once this one finishes' : '')
+    : '';
 
   const logEl = document.getElementById('progress-log');
   logEl.innerHTML = s.log.map(item => {
@@ -244,18 +363,31 @@ function renderProgress(s) {
   }).join('');
   logEl.scrollTop = logEl.scrollHeight;
 
-  document.getElementById('cancel-download').style.display = s.status === 'running' ? 'inline-block' : 'none';
+  const cancelBtn = document.getElementById('cancel-download');
+  cancelBtn.style.display = s.status === 'running' ? 'inline-block' : 'none';
+  if (s.status !== 'running') {
+    cancelRequested = false;
+    cancelBtn.disabled = false;
+    cancelBtn.textContent = 'Stop';
+  }
   document.getElementById('download-link').style.display = (s.status === 'done' || s.status === 'cancelled') && s.done > 0 ? 'inline-block' : 'none';
   document.getElementById('progress-error').textContent = s.error || '';
 }
 
 (async function init() {
   await loadLibrary();
-  fetchSizesInBackground();
   const resp = await fetch('/download/status');
   const s = await resp.json();
-  if (s.status === 'running' || s.status === 'done' || s.status === 'cancelled') {
+  if (s.status === 'running') {
+    // A download survived a page reload -- it already owns the shared
+    // progress card, so don't also kick off a size-check sweep against it.
+    setActivity(STATE.DOWNLOADING);
     renderProgress(s);
-    if (s.status === 'running') pollStatus();
+    pollStatus();
+    return;
   }
+  if (s.status === 'done' || s.status === 'cancelled') {
+    renderProgress(s);
+  }
+  fetchSizesInBackground();
 })();

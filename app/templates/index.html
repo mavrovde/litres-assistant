@@ -55,11 +55,33 @@
 
   <div class="page{% if logged_in %} wide{% endif %}">
     {% if logged_in %}
+      <div class="card" id="progress-section" style="display:none">
+        <div class="card-row">
+          <h2>Progress</h2>
+          <span id="progress-badge" class="badge badge-idle">Idle</span>
+        </div>
+        <div class="progress-track"><div id="progress-bar" class="progress-fill"></div></div>
+        <p id="progress-count" class="muted" style="font-size:0.85rem;margin:0"></p>
+        <p id="progress-current"></p>
+        <p id="progress-error" style="color:var(--danger)"></p>
+        <ul id="progress-log"></ul>
+        <div class="progress-actions">
+          <button type="button" id="cancel-download" class="btn-danger-ghost" style="display:none">Stop</button>
+          <a id="download-link" href="/download/file" style="display:none">
+            <button type="button" class="btn-primary">💾 Save zip file</button>
+          </a>
+        </div>
+      </div>
+
       <div class="card">
         <div class="card-row" style="margin-bottom:1rem">
           <h2>📚 Your bookshelf</h2>
-          <div class="search-wrap">
-            <input type="search" id="search-box" placeholder="Filter by title or author…">
+          <div class="toolbar-right">
+            <button type="button" class="btn-primary" id="refresh-library" title="Your library list is cached for a while so reopening this page doesn't re-query litres.ru every time -- use this after buying something new.">↻ Refresh</button>
+            <div class="search-wrap">
+              <input type="search" id="search-box" placeholder="Filter by title or author…">
+            </div>
+            <button type="button" class="btn-primary" id="start-download" disabled>⬇ Download</button>
           </div>
         </div>
         <div class="card-row" style="margin-bottom:0.9rem">
@@ -83,33 +105,6 @@
           </div>
         </div>
         <div id="book-list"><div class="empty-state">Loading your library…</div></div>
-      </div>
-
-      <div class="card" id="progress-section" style="display:none">
-        <div class="card-row">
-          <h2>Progress</h2>
-          <span id="progress-badge" class="badge badge-idle">Idle</span>
-        </div>
-        <div class="progress-track"><div id="progress-bar" class="progress-fill"></div></div>
-        <p id="progress-count" class="muted" style="font-size:0.85rem;margin:0"></p>
-        <p id="progress-current"></p>
-        <p id="progress-error" style="color:var(--danger)"></p>
-        <ul id="progress-log"></ul>
-        <div class="progress-actions">
-          <button type="button" id="cancel-download" class="btn-danger-ghost" style="display:none">Stop</button>
-          <a id="download-link" href="/download/file" style="display:none">
-            <button type="button" class="btn-primary">💾 Save zip file</button>
-          </a>
-        </div>
-      </div>
-
-      <div class="selection-bar" id="selection-bar" style="display:none">
-        <div class="selection-bar-inner">
-          <span class="count" id="bar-count">0 selected</span>
-          <span class="size" id="bar-size"></span>
-          <span class="spacer"></span>
-          <button type="button" id="start-download" class="btn-primary">⬇ Download</button>
-        </div>
       </div>
 
       <script src="/static/js/app.js"></script>

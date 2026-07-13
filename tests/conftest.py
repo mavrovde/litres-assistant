@@ -1,12 +1,12 @@
 """Shared fixtures. The two autouse ones are safety nets that apply to
 every test in the suite: never touch the real OS keychain, never leak the
-real .env credentials or a prior test's session/job state into the next
-test."""
+real .env credentials or a prior test's session/job/cache state into the
+next test."""
 from __future__ import annotations
 
 import pytest
 
-from app import credentials, download_job, session
+from app import cache, credentials, download_job, session
 from tests.fakes import FakeKeyring
 
 
@@ -20,12 +20,13 @@ def fake_keyring(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def isolated_module_state(tmp_path, monkeypatch):
-    """Reset the module-level singletons in session.py/download_job.py
-    before and after every test, and keep the real .env's credentials (if
-    any) out of the test environment entirely."""
+    """Reset the module-level singletons in session.py/download_job.py/
+    cache.py before and after every test, and keep the real .env's
+    credentials (if any) out of the test environment entirely."""
     monkeypatch.delenv("LITRES_LOGIN", raising=False)
     monkeypatch.delenv("LITRES_PASSWORD", raising=False)
     monkeypatch.setattr(session, "SESSION_STATE_PATH", tmp_path / ".litres_session.json")
+    monkeypatch.setattr(cache, "CACHE_PATH", tmp_path / ".litres_cache.json")
 
     def _reset():
         session._state["client"] = None
@@ -40,6 +41,7 @@ def isolated_module_state(tmp_path, monkeypatch):
             error=None,
             zip_path=None,
         )
+        cache._state = None
 
     _reset()
     yield

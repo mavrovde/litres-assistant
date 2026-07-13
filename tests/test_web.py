@@ -116,10 +116,111 @@ def test_library_returns_expected_shape(monkeypatch):
     }
 
 
+def test_library_second_request_is_served_from_cache_not_refetched(monkeypatch):
+    fake = client_factory(monkeypatch, session, library=[{"id": 1, "title": "Book One"}])
+    calls = []
+    original = fake.iter_library
+
+    def counting_iter_library(limit=100):
+        calls.append(1)
+        return original(limit)
+
+    fake.iter_library = counting_iter_library
+
+    with TestClient(app) as client:
+        client.post("/login", data={"login": "u@example.com", "password": "pw"})
+        first = client.get("/library")
+        second = client.get("/library")
+
+    assert first.json() == second.json()
+    assert len(calls) == 1  # second request hit the cache, not litres.ru again
+
+
+def test_library_refresh_param_bypasses_the_cache(monkeypatch):
+    fake = client_factory(monkeypatch, session, library=[{"id": 1, "title": "Book One"}])
+    calls = []
+    original = fake.iter_library
+
+    def counting_iter_library(limit=100):
+        calls.append(1)
+        return original(limit)
+
+    fake.iter_library = counting_iter_library
+
+    with TestClient(app) as client:
+        client.post("/login", data={"login": "u@example.com", "password": "pw"})
+        client.get("/library")
+        client.get("/library?refresh=true")
+
+    assert len(calls) == 2
+
+
+def test_book_size_second_request_is_served_from_cache_not_refetched(monkeypatch):
+    fake = client_factory(
+        monkeypatch,
+        session,
+        library=[{"id": 1, "title": "Book One"}],
+        files_by_id={1: [{"id": 100, "extension": "epub", "is_additional": False, "size": 2_400_000}]},
+    )
+    calls = []
+    original = fake.get_files
+
+    def counting_get_files(art_id):
+        calls.append(art_id)
+        return original(art_id)
+
+    fake.get_files = counting_get_files
+
+    with TestClient(app) as client:
+        client.post("/login", data={"login": "u@example.com", "password": "pw"})
+        first = client.get("/library/1/size")
+        second = client.get("/library/1/size")
+
+    assert first.json() == {"ok": True, "size_mb": 2.4, "cached": False}
+    assert second.json() == {"ok": True, "size_mb": 2.4, "cached": True}
+    assert calls == [1]  # second request hit the cache, not litres.ru again
+
+
+def test_library_returns_clean_error_instead_of_crashing(monkeypatch):
+    # Regression test: a transient network failure, an anti-bot block, or a
+    # client reference left stale by a login/logout race (see session.py)
+    # used to bubble up as an unhandled 500 with a raw traceback.
+    fake = client_factory(monkeypatch, session, library=[])
+
+    def broken_iter_library(limit=100):
+        raise RuntimeError("socket hang up")
+        yield  # pragma: no cover -- makes this a generator
+
+    fake.iter_library = broken_iter_library
+
+    with TestClient(app) as client:
+        client.post("/login", data={"login": "user@example.com", "password": "hunter2"})
+        resp = client.get("/library")
+
+    assert resp.status_code == 503
+    assert resp.json()["ok"] is False
+
+
 def test_book_size_requires_login():
     with TestClient(app) as client:
         resp = client.get("/library/1/size")
     assert resp.status_code == 401
+
+
+def test_book_size_returns_clean_error_instead_of_crashing(monkeypatch):
+    fake = client_factory(monkeypatch, session, library=[{"id": 1, "title": "Book One"}])
+
+    def broken_get_files(art_id):
+        raise RuntimeError("Event loop is closed! Is Playwright already stopped?")
+
+    fake.get_files = broken_get_files
+
+    with TestClient(app) as client:
+        client.post("/login", data={"login": "u@example.com", "password": "pw"})
+        resp = client.get("/library/1/size")
+
+    assert resp.status_code == 503
+    assert resp.json()["ok"] is False
 
 
 def test_book_size_returns_mb_for_available_file(monkeypatch):
@@ -132,7 +233,7 @@ def test_book_size_returns_mb_for_available_file(monkeypatch):
     with TestClient(app) as client:
         client.post("/login", data={"login": "u@example.com", "password": "pw"})
         resp = client.get("/library/1/size")
-    assert resp.json() == {"ok": True, "size_mb": 2.4}
+    assert resp.json() == {"ok": True, "size_mb": 2.4, "cached": False}
 
 
 def test_book_size_is_none_when_no_downloadable_file(monkeypatch):
@@ -140,7 +241,7 @@ def test_book_size_is_none_when_no_downloadable_file(monkeypatch):
     with TestClient(app) as client:
         client.post("/login", data={"login": "u@example.com", "password": "pw"})
         resp = client.get("/library/1/size")
-    assert resp.json() == {"ok": True, "size_mb": None}
+    assert resp.json() == {"ok": True, "size_mb": None, "cached": False}
 
 
 def test_download_start_requires_login():

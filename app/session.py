@@ -19,7 +19,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Optional
 
-from . import credentials
+from . import cache, credentials
 from .client import LitresAuthError, LitresClient
 
 logger = logging.getLogger(__name__)
@@ -120,6 +120,11 @@ def _login_impl(login_id: str, password: str) -> LitresClient:
     client.save_state(SESSION_STATE_PATH)
     credentials.save(login_id, password)
     _state["client"], _state["login"] = client, login_id
+    # A fresh (non-cookie-restore) login may be a different litres.ru
+    # account than whatever the cache was last filled from -- cheaper to
+    # always drop it here than to risk one account's library/files leaking
+    # into another's view.
+    cache.clear()
     logger.info("Logged in as %s", login_id)
     return client
 
@@ -132,6 +137,7 @@ def _logout_impl() -> None:
         _state["client"].close()
     SESSION_STATE_PATH.unlink(missing_ok=True)
     _state["client"], _state["login"] = None, None
+    cache.clear()
 
 
 def _shutdown_impl() -> None:

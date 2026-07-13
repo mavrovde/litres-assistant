@@ -35,7 +35,7 @@ body {
   color: var(--text);
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
-  padding-bottom: 6rem;
+  padding-bottom: 2rem;
 }
 h1, h2, h3 { font-family: 'Playfair Display', Georgia, serif; letter-spacing: -0.01em; margin: 0; }
 a { color: var(--accent); text-decoration: none; }
@@ -223,29 +223,6 @@ button:active { transform: scale(0.97); }
 }
 .book-size-g { font-size: 0.68rem; color: var(--text-faint); margin-top: 2px; }
 .empty-state { grid-column: 1 / -1; text-align: center; padding: 2.5rem 1rem; color: var(--text-muted); }
-
-/* -- Sticky selection bar -- */
-.selection-bar {
-  position: fixed; bottom: 0; left: 0; right: 0; z-index: 30;
-  display: flex; align-items: center; justify-content: center;
-  pointer-events: none;
-}
-.selection-bar-inner {
-  pointer-events: auto;
-  display: flex; align-items: center; gap: 1.2rem;
-  background: var(--text);
-  color: white;
-  border-radius: var(--radius-lg) var(--radius-lg) 0 0;
-  padding: 0.9rem 1.6rem;
-  box-shadow: var(--shadow-md);
-  margin-bottom: 0;
-  max-width: 1180px;
-  width: calc(100% - 3rem);
-}
-.selection-bar-inner .count { font-weight: 700; }
-.selection-bar-inner .size { color: rgba(255,255,255,0.65); font-size: 0.85rem; }
-.selection-bar-inner .spacer { flex: 1; }
-.selection-bar-inner .btn-primary { white-space: nowrap; }
 
 /* -- Progress card -- */
 .badge { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.25rem 0.7rem; border-radius: 999px; font-size: 0.78rem; font-weight: 700; letter-spacing: 0.02em; }

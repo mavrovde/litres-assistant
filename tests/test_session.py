@@ -7,7 +7,7 @@ import threading
 
 import pytest
 
-from app import credentials, session
+from app import cache, credentials, session
 from tests.fakes import FakeLitresClient, client_factory
 
 # --------------------------------------------------------------------------
@@ -163,6 +163,25 @@ def test_logout_clears_client_credentials_and_session_file(monkeypatch):
 def test_logout_when_nothing_logged_in_does_not_raise():
     session.logout()  # must not raise
     assert session.current_client() is None
+
+
+def test_login_clears_the_cache_so_a_different_account_cant_leak_in(monkeypatch):
+    cache.set_library([{"id": 1, "title": "Stale book from a previous account"}])
+    client_factory(monkeypatch, session)
+
+    session.login("user@example.com", "hunter2")
+
+    assert cache.get_library() is None
+
+
+def test_logout_clears_the_cache(monkeypatch):
+    client_factory(monkeypatch, session)
+    session.login("user@example.com", "hunter2")
+    cache.set_library([{"id": 1, "title": "Book One"}])
+
+    session.logout()
+
+    assert cache.get_library() is None
 
 
 def test_shutdown_closes_client_but_keeps_saved_credentials(monkeypatch):

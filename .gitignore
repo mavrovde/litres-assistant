@@ -3,5 +3,6 @@
 __pycache__/
 *.pyc
 .litres_session.json
+.litres_cache.json
 .claude/settings.local.json
 .coverage

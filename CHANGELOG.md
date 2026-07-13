@@ -1,5 +1,38 @@
 # Changelog
 
+## [0.4.0] - Caching, a unified progress/activity state machine, and reliability fixes
+
+### Added
+- Disk-backed cache (`app/cache.py`) for the library listing (15 min TTL)
+  and per-book file listings (7-day TTL) -- repeat page loads, app
+  restarts, and starting a download right after browsing the library no
+  longer re-query litres.ru for data already fetched moments ago. Cleared
+  on login/logout so one account's data can't leak into another's session.
+- A "Refresh" button for the library list, next to Download, for the rare
+  case you bought something new before the cache would naturally expire.
+- An explicit frontend activity state machine (idle/checking/downloading)
+  driving one shared, unified progress card instead of two separate
+  indicators -- checking sizes and downloading now visibly disable each
+  other's controls instead of being able to run concurrently.
+- Immediate "Stopping…" feedback when Stop is clicked, since cancellation
+  can only take effect between books (documented, unchanged limitation) --
+  previously the click looked completely unacknowledged until the current
+  book's transfer finished.
+
+### Changed
+- The background size-check sweep now prioritizes whichever book you just
+  selected instead of waiting for its turn in the full-library queue --
+  pacing requests to avoid looking like scraping had made selected books
+  wait through however many hundreds of others came first in the list.
+- That same sweep only paces itself on genuine live litres.ru calls now
+  (the backend reports cache hits explicitly) -- cached books resolve
+  instantly regardless of queue position.
+- Moved the Download button next to Refresh at the top instead of a
+  sticky bottom bar, with matching styling.
+- `run.py` now scopes its dev-reload file watcher to `app/` only --
+  previously editing a test file mid-session silently restarted the whole
+  live server, wiping any in-progress download.
+
 ## [0.3.0] - Classic-library redesign, relocated settings, and a mascot
 
 ### Added

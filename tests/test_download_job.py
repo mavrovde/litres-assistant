@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import time
 
-from app import download_job
+from app import cache, download_job
 from tests.fakes import FakeLitresClient
 
 
@@ -190,3 +190,85 @@ def test_snapshot_log_is_a_copy_not_the_live_list():
     snap = download_job.snapshot()
     snap["log"].append({"title": "injected", "status": "done"})
     assert len(download_job.snapshot()["log"]) == 1  # mutation didn't leak back
+
+
+# --------------------------------------------------------------------------
+# _friendly_error -- pure translation logic, no threading involved.
+# --------------------------------------------------------------------------
+
+
+def test_friendly_error_recognizes_ddos_guard_block():
+    msg = download_job._friendly_error(RuntimeError("Download failed for art 1 (403): DDoS-Guard"))
+    assert "anti-bot" in msg
+
+
+def test_friendly_error_recognizes_stale_client_after_relogin():
+    # Seen in practice: a size/download request captured a client reference
+    # that got closed by a login/logout happening in the meantime (see
+    # session.py) -- Playwright surfaces that as this specific message.
+    msg = download_job._friendly_error(RuntimeError("Event loop is closed! Is Playwright already stopped?"))
+    assert "session changed" in msg.lower()
+
+
+def test_friendly_error_recognizes_dropped_connection():
+    msg = download_job._friendly_error(RuntimeError("APIRequestContext.get: socket hang up"))
+    assert "interrupted" in msg.lower()
+
+
+def test_friendly_error_falls_back_to_raw_text_for_unrecognized_errors():
+    msg = download_job._friendly_error(RuntimeError("something truly unexpected"))
+    assert "something truly unexpected" in msg
+
+
+# --------------------------------------------------------------------------
+# Caching -- a warm cache.py entry should mean litres.ru isn't re-hit for
+# data the browser already fetched moments ago (see cache.py's docstring
+# for why that matters beyond just speed).
+# --------------------------------------------------------------------------
+
+
+def test_start_uses_cached_library_listing_instead_of_iter_library():
+    client = _make_client(_book(1, "Book One", TEXT_FILES))
+    client.iter_library = lambda limit=100: (_ for _ in ()).throw(
+        AssertionError("iter_library() should not be called when the cache is warm")
+    )
+    cache.set_library([{"id": 1, "title": "Book One"}])
+
+    download_job.start(client)
+    result = wait_until_finished()
+
+    assert result["status"] == "done"
+    assert result["done"] == 1
+
+
+def test_start_falls_back_to_iter_library_when_cache_is_cold():
+    client = _make_client(_book(1, "Book One", TEXT_FILES))
+    assert cache.get_library() is None  # sanity check: nothing cached yet
+
+    download_job.start(client)
+    result = wait_until_finished()
+
+    assert result["status"] == "done"
+    assert result["done"] == 1
+
+
+def test_download_reuses_a_cached_file_listing_instead_of_calling_get_files():
+    client = _make_client(_book(1, "Book One", []))  # no files registered on the fake at all
+    cache.set_files(1, TEXT_FILES)  # ...but the cache already has them, e.g. from a size check
+
+    download_job.start(client)
+    result = wait_until_finished()
+
+    assert result["status"] == "done"
+    assert result["done"] == 1
+    assert client.download_calls == [1]
+
+
+def test_download_populates_the_cache_after_a_live_file_fetch():
+    client = _make_client(_book(1, "Book One", TEXT_FILES))
+    assert cache.get_files(1) is None  # sanity check: nothing cached yet
+
+    download_job.start(client)
+    wait_until_finished()
+
+    assert cache.get_files(1) == TEXT_FILES
