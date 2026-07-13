@@ -2,20 +2,18 @@
 
 ## Supported Versions
 
-Use this section to tell people about which versions of your project are
-currently being supported with security updates.
-
-| Version | Supported          |
-| ------- | ------------------ |
-| 5.1.x   | :white_check_mark: |
-| 5.0.x   | :x:                |
-| 4.0.x   | :white_check_mark: |
-| < 4.0   | :x:                |
+This is a small, personal, single-maintainer tool with no formal release
+branches -- only the latest commit on `main` is supported. There are no
+older versions receiving security fixes.
 
 ## Reporting a Vulnerability
 
-Use this section to tell people how to report a vulnerability.
+Please open a [GitHub issue](https://github.com/mavrovde/litres-assistant/issues)
+describing the problem. Since this runs entirely locally (bound to
+`127.0.0.1`, no server-side component, no telemetry -- see the README's
+"Security notes"), the realistic attack surface is limited to the local
+machine it runs on and the app's own dependencies; please call that context
+out if it's relevant to what you found.
 
-Tell them where to go, how often they can expect to get an update on a
-reported vulnerability, what to expect if the vulnerability is accepted or
-declined, etc.
+There's no bug bounty or guaranteed response time -- this is maintained on
+a best-effort basis.
