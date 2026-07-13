@@ -97,6 +97,27 @@ def get_library():
     return {"ok": True, "books": books}
 
 
+def _book_size_mb(client, art_id):
+    files = client.get_files(art_id)
+    best = client.pick_best_file(files)
+    size = best.get("size") if best else None
+    return round(size / 1e6, 1) if size else None
+
+
+@app.get("/library/{art_id}/size")
+def get_book_size(art_id: int):
+    # Deliberately not part of /library: fetching every book's file size
+    # upfront would mean one extra API call per book (this backend has a
+    # single dedicated worker thread -- see session.py -- so that's fully
+    # sequential, not parallel). The UI fetches this lazily per row instead
+    # so the initial library list stays fast.
+    client = session.current_client()
+    if client is None:
+        return JSONResponse({"ok": False, "error": "Not logged in"}, status_code=401)
+    size_mb = session.run(_book_size_mb, client, art_id)
+    return {"ok": True, "size_mb": size_mb}
+
+
 class DownloadRequest(BaseModel):
     art_ids: Optional[List[int]] = None
     ebook_format: Optional[str] = None
@@ -108,7 +129,12 @@ def start_download(req: DownloadRequest):
     client = session.current_client()
     if client is None:
         return JSONResponse({"ok": False, "error": "Not logged in"}, status_code=401)
-    art_ids = set(req.art_ids) if req.art_ids else None
+    # `None` means "no filter" (download everything); an explicitly empty
+    # list means the caller selected zero books, which is an error, not
+    # "everything" -- those must not collapse into the same falsy check.
+    if req.art_ids is not None and len(req.art_ids) == 0:
+        return JSONResponse({"ok": False, "error": "No books selected"}, status_code=400)
+    art_ids = set(req.art_ids) if req.art_ids is not None else None
     started = download_job.start(client, art_ids, req.ebook_format, req.audiobook_format)
     return {"ok": True, "started": started}
 

@@ -3,143 +3,319 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>LitRes Library Downloader</title>
+  <title>LitRes Assistant</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     :root {
-      --content-max: 760px;
-      --pico-font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      --bg: #f4f4f8;
+      --surface: #ffffff;
+      --surface-hover: #f8f8fc;
+      --border: #e9e9f1;
+      --text: #17171f;
+      --text-muted: #71717f;
+      --text-faint: #a3a3b0;
+      --accent: #5b52f0;
+      --accent-hover: #4740d6;
+      --accent-soft: #edecfe;
+      --success: #1a9c6d;
+      --success-soft: #e4f7ef;
+      --warning: #b8790a;
+      --warning-soft: #fdf1dd;
+      --danger: #d1293d;
+      --danger-soft: #fce9eb;
+      --radius-lg: 20px;
+      --radius-md: 14px;
+      --radius-sm: 10px;
+      --shadow-sm: 0 1px 2px rgba(20,20,40,0.05);
+      --shadow-md: 0 12px 28px -12px rgba(20,20,40,0.18);
     }
-    main.container { max-width: var(--content-max); }
-    body { -webkit-font-smoothing: antialiased; }
-    h1, h2, h3 { letter-spacing: -0.02em; }
 
-    header.hero { text-align: center; padding-bottom: 0.5rem; }
-    header.hero h1 { font-size: 1.9rem; margin-bottom: 0.25rem; }
-    header.hero p { color: var(--pico-muted-color); font-size: 1.02rem; }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; }
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      -webkit-font-smoothing: antialiased;
+      padding-bottom: 6rem;
+    }
+    h1, h2, h3 { letter-spacing: -0.02em; margin: 0; }
+    a { color: var(--accent); text-decoration: none; }
+    .muted { color: var(--text-muted); }
+    .faint { color: var(--text-faint); }
 
-    article { border-radius: 12px; }
+    input, select, button {
+      font-family: inherit;
+      font-size: 0.95rem;
+    }
+    input[type=text], input[type=password], input[type=search] {
+      width: 100%;
+      padding: 0.65rem 0.9rem;
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius-sm);
+      background: var(--surface);
+      color: var(--text);
+      outline: none;
+      transition: border-color 0.15s ease;
+    }
+    input[type=text]:focus, input[type=password]:focus, input[type=search]:focus {
+      border-color: var(--accent);
+    }
+    select {
+      padding: 0.45rem 0.7rem;
+      border: 1.5px solid var(--border);
+      border-radius: 999px;
+      background: var(--surface);
+      color: var(--text);
+      cursor: pointer;
+    }
 
-    .toolbar { display: flex; justify-content: space-between; align-items: center; gap: 1rem; margin-bottom: 0.5rem; flex-wrap: wrap; }
-    .toolbar .links a { margin-left: 0.9rem; cursor: pointer; font-weight: 500; }
+    button {
+      cursor: pointer;
+      border: none;
+      border-radius: var(--radius-sm);
+      padding: 0.7rem 1.3rem;
+      font-weight: 600;
+      transition: transform 0.08s ease, background 0.15s ease, box-shadow 0.15s ease;
+    }
+    button:active { transform: scale(0.97); }
+    .btn-primary { background: var(--accent); color: white; box-shadow: var(--shadow-sm); }
+    .btn-primary:hover { background: var(--accent-hover); }
+    .btn-primary:disabled { background: var(--text-faint); cursor: not-allowed; }
+    .btn-ghost { background: transparent; color: var(--text-muted); padding: 0.5rem 0.9rem; }
+    .btn-ghost:hover { background: var(--surface-hover); color: var(--text); }
+    .btn-danger-ghost { background: var(--danger-soft); color: var(--danger); padding: 0.55rem 1rem; }
+    .btn-danger-ghost:hover { filter: brightness(0.96); }
+    .text-link { background: none; border: none; padding: 0; color: var(--accent); font-weight: 500; cursor: pointer; font-size: 0.88rem; }
+    .text-link:hover { text-decoration: underline; }
 
-    #book-list { max-height: 360px; overflow-y: auto; border: 1px solid var(--pico-muted-border-color); border-radius: 10px; padding: 0.25rem 0.75rem; background: var(--pico-card-background-color); }
-    .book-row { display: flex; align-items: center; gap: 0.75rem; padding: 0.55rem 0; border-bottom: 1px solid var(--pico-muted-border-color); cursor: pointer; }
-    .book-row:last-child { border-bottom: none; }
-    .book-row:hover { background: var(--pico-secondary-background); }
-    .book-row input[type=checkbox] { margin: 0; flex-shrink: 0; }
-    .book-cover { width: 34px; height: 46px; object-fit: cover; border-radius: 4px; flex-shrink: 0; background: var(--pico-muted-border-color); box-shadow: 0 1px 3px rgba(0,0,0,0.15); }
-    .book-cover.placeholder { display: flex; align-items: center; justify-content: center; font-size: 1.1rem; }
-    .book-meta { display: flex; flex-direction: column; min-width: 0; }
-    .book-title { font-size: 0.96rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .book-authors { font-size: 0.82rem; color: var(--pico-muted-color); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .type-icon { flex-shrink: 0; opacity: 0.75; }
+    /* -- Top bar -- */
+    .topbar {
+      position: sticky; top: 0; z-index: 20;
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0.9rem 1.5rem;
+      background: rgba(244,244,248,0.85);
+      backdrop-filter: blur(10px);
+      border-bottom: 1px solid var(--border);
+    }
+    .brand { display: flex; align-items: center; gap: 0.55rem; font-weight: 800; font-size: 1.08rem; }
+    .brand .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); }
+    .session-chip { display: flex; align-items: center; gap: 0.7rem; font-size: 0.88rem; }
 
-    .badge { display: inline-block; padding: 0.15rem 0.6rem; border-radius: 999px; font-size: 0.78rem; font-weight: 600; letter-spacing: 0.02em; }
-    .badge-idle { background: var(--pico-muted-border-color); color: var(--pico-muted-color); }
-    .badge-running { background: #fff3cd; color: #8a6d00; }
-    .badge-done { background: #d4edda; color: #1e7e34; }
-    .badge-error { background: #f8d7da; color: #a71d2a; }
-    .badge-cancelled { background: #e2e3e5; color: #41464b; }
+    .page { max-width: 780px; margin: 0 auto; padding: 2rem 1.5rem 0; }
 
-    #progress-current { color: var(--pico-muted-color); font-size: 0.9rem; min-height: 1.2em; }
-    #progress-log { max-height: 220px; overflow-y: auto; margin: 0.75rem 0 0; padding: 0; list-style: none; border: 1px solid var(--pico-muted-border-color); border-radius: 10px; }
-    #progress-log li { padding: 0.35rem 0.75rem; font-size: 0.88rem; border-bottom: 1px solid var(--pico-muted-border-color); }
-    #progress-log li:last-child { border-bottom: none; }
-    #progress-log li.skipped { color: #a86b00; }
-    #progress-log li.done { color: #1e7e34; }
-    #progress-log li.error { color: #a71d2a; }
-    #progress-log li::before { margin-right: 0.5rem; }
-    #progress-log li.done::before { content: "✓"; }
-    #progress-log li.skipped::before { content: "⚠"; }
-    #progress-log li.error::before { content: "✗"; }
+    /* -- Hero (logged out) -- */
+    .hero { text-align: center; padding: 3rem 1rem 1rem; }
+    .hero h1 { font-size: 2.1rem; margin-bottom: 0.5rem; }
+    .hero p { color: var(--text-muted); font-size: 1.05rem; max-width: 480px; margin: 0 auto; }
 
-    .progress-actions { display: flex; gap: 0.6rem; margin-top: 0.75rem; }
-    .format-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
-    .muted { color: var(--pico-muted-color); font-size: 0.9em; }
-    article > h2:first-child, article > header:first-child { margin-top: 0; }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-sm);
+      padding: 1.5rem;
+      margin-bottom: 1.25rem;
+    }
+    .card h2 { font-size: 1.05rem; margin-bottom: 0.9rem; }
+    .card-row { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+
+    .login-card { max-width: 380px; margin: 1.5rem auto 0; }
+    .field { margin-bottom: 0.9rem; }
+    .field label { display: block; font-size: 0.85rem; font-weight: 500; margin-bottom: 0.35rem; color: var(--text-muted); }
+    .error-banner { background: var(--danger-soft); color: var(--danger); border-radius: var(--radius-md); padding: 0.8rem 1rem; margin-bottom: 1rem; font-size: 0.9rem; }
+
+    /* -- Defaults strip -- */
+    .defaults-strip { display: flex; align-items: center; gap: 0.9rem; flex-wrap: wrap; font-size: 0.88rem; }
+    .defaults-strip .group { display: flex; align-items: center; gap: 0.5rem; }
+    .defaults-strip .group span { color: var(--text-muted); }
+
+    /* -- Library card -- */
+    .search-wrap { position: relative; max-width: 260px; }
+    .search-wrap input { padding-left: 2.1rem; }
+    .search-wrap::before {
+      content: "⌕"; position: absolute; left: 0.75rem; top: 50%; transform: translateY(-50%);
+      color: var(--text-faint); font-size: 1.1rem;
+    }
+
+    #book-list { max-height: 400px; overflow-y: auto; margin: 0 -0.5rem; }
+    .book-row {
+      display: flex; align-items: center; gap: 0.85rem;
+      padding: 0.6rem 0.5rem;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      border: 1.5px solid transparent;
+    }
+    .book-row:hover { background: var(--surface-hover); }
+    .book-row.selected { background: var(--accent-soft); border-color: #d9d6fb; }
+    .book-row input[type=checkbox] {
+      flex-shrink: 0; width: 18px; height: 18px; accent-color: var(--accent); cursor: pointer;
+    }
+    .book-cover {
+      width: 38px; height: 52px; object-fit: cover; border-radius: 5px; flex-shrink: 0;
+      background: var(--border); box-shadow: var(--shadow-sm);
+    }
+    .book-cover.placeholder { display: flex; align-items: center; justify-content: center; font-size: 1.2rem; }
+    .book-meta { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+    .book-title { font-size: 0.94rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .book-authors { font-size: 0.8rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .type-tag {
+      flex-shrink: 0; font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em;
+      padding: 0.2rem 0.5rem; border-radius: 999px;
+    }
+    .type-tag.audio { background: var(--warning-soft); color: var(--warning); }
+    .type-tag.book { background: var(--accent-soft); color: var(--accent); }
+    .book-size { flex-shrink: 0; font-size: 0.78rem; color: var(--text-faint); min-width: 3.6rem; text-align: right; }
+    .empty-state { text-align: center; padding: 2.5rem 1rem; color: var(--text-muted); }
+
+    /* -- Sticky selection bar -- */
+    .selection-bar {
+      position: fixed; bottom: 0; left: 0; right: 0; z-index: 30;
+      display: flex; align-items: center; justify-content: center;
+      pointer-events: none;
+    }
+    .selection-bar-inner {
+      pointer-events: auto;
+      display: flex; align-items: center; gap: 1.2rem;
+      background: var(--text);
+      color: white;
+      border-radius: var(--radius-lg) var(--radius-lg) 0 0;
+      padding: 0.9rem 1.6rem;
+      box-shadow: var(--shadow-md);
+      margin-bottom: 0;
+      max-width: 780px;
+      width: calc(100% - 3rem);
+    }
+    .selection-bar-inner .count { font-weight: 700; }
+    .selection-bar-inner .size { color: rgba(255,255,255,0.65); font-size: 0.85rem; }
+    .selection-bar-inner .spacer { flex: 1; }
+    .selection-bar-inner .btn-primary { white-space: nowrap; }
+
+    /* -- Progress card -- */
+    .badge { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.25rem 0.7rem; border-radius: 999px; font-size: 0.78rem; font-weight: 700; letter-spacing: 0.02em; }
+    .badge::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+    .badge-idle { background: var(--border); color: var(--text-muted); }
+    .badge-running { background: var(--warning-soft); color: var(--warning); }
+    .badge-done { background: var(--success-soft); color: var(--success); }
+    .badge-error { background: var(--danger-soft); color: var(--danger); }
+    .badge-cancelled { background: var(--border); color: var(--text-muted); }
+
+    .progress-track { background: var(--border); border-radius: 999px; height: 8px; overflow: hidden; margin: 1rem 0 0.6rem; }
+    .progress-fill {
+      background: linear-gradient(90deg, var(--accent), #8b7cf6);
+      height: 100%; width: 0%; border-radius: 999px;
+      transition: width 0.4s ease;
+    }
+    .progress-fill.indeterminate {
+      width: 40% !important;
+      animation: indeterminate 1.2s ease-in-out infinite;
+    }
+    @keyframes indeterminate {
+      0% { margin-left: -40%; }
+      100% { margin-left: 100%; }
+    }
+
+    #progress-current { color: var(--text-muted); font-size: 0.88rem; min-height: 1.3em; margin: 0.2rem 0 0; }
+    #progress-log { max-height: 240px; overflow-y: auto; margin: 1rem 0 0; padding: 0; list-style: none; }
+    #progress-log li {
+      display: flex; align-items: center; gap: 0.6rem;
+      padding: 0.45rem 0.1rem; font-size: 0.86rem; border-top: 1px solid var(--border);
+    }
+    #progress-log li:first-child { border-top: none; }
+    #progress-log li .icon { flex-shrink: 0; width: 18px; height: 18px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.7rem; color: white; }
+    #progress-log li.done .icon { background: var(--success); }
+    #progress-log li.skipped .icon { background: var(--warning); }
+    #progress-log li.error .icon { background: var(--danger); }
+    #progress-log li .title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #progress-log li .detail { color: var(--text-faint); font-size: 0.8rem; flex-shrink: 0; }
+
+    .progress-actions { display: flex; gap: 0.6rem; margin-top: 1rem; }
   </style>
 </head>
 <body>
-  <header class="container hero">
-    <h1>📚 LitRes Library Downloader</h1>
-    <p>Back up your own purchased books and audiobooks -- runs locally, one click at a time.</p>
-  </header>
-
-  <main class="container">
-    {% if error %}
-      <article style="border-left: 4px solid var(--pico-del-color)">
-        <p style="margin:0">{{ error }}</p>
-      </article>
-    {% endif %}
-
+  <div class="topbar">
+    <div class="brand"><span class="dot"></span> LitRes Assistant</div>
     {% if logged_in %}
-      <nav>
-        <ul><li>Logged in as <strong>{{ login }}</strong></li></ul>
-        <ul><li>
-          <form method="post" action="/logout" style="margin:0">
-            <button type="submit" class="outline secondary">Log out</button>
-          </form>
-        </li></ul>
-      </nav>
+      <div class="session-chip">
+        <span class="muted">{{ login }}</span>
+        <form method="post" action="/logout" style="margin:0">
+          <button type="submit" class="btn-ghost">Log out</button>
+        </form>
+      </div>
+    {% endif %}
+  </div>
 
-      <article>
-        <h2>Default format</h2>
-        <div class="format-grid">
-          <label>E-books
+  <div class="page">
+    {% if logged_in %}
+      <div class="card">
+        <div class="defaults-strip">
+          <strong style="margin-right:0.2rem">Defaults</strong>
+          <div class="group">
+            <span>E-books</span>
             <select id="ebook-format">
               {% for fmt in ebook_formats %}
                 <option value="{{ fmt }}">{{ fmt }}</option>
               {% endfor %}
             </select>
-          </label>
-          <label>Audiobooks
+          </div>
+          <div class="group">
+            <span>Audiobooks</span>
             <select id="audiobook-format">
               {% for fmt in audiobook_formats %}
                 <option value="{{ fmt }}">{{ fmt }}</option>
               {% endfor %}
             </select>
-          </label>
+          </div>
+          <span class="faint" style="font-size:0.8rem">falls back automatically if unavailable</span>
         </div>
-        <small class="muted">Used when a book has your chosen format; otherwise falls back automatically.</small>
-      </article>
+      </div>
 
-      <article>
-        <div class="toolbar">
-          <h2 style="margin:0">Your library</h2>
-          <input type="search" id="search-box" placeholder="Filter by title…" style="max-width:220px;margin:0">
+      <div class="card">
+        <div class="card-row" style="margin-bottom:1rem">
+          <h2>Your library</h2>
+          <div class="search-wrap">
+            <input type="search" id="search-box" placeholder="Filter by title or author…">
+          </div>
         </div>
-        <div class="toolbar">
-          <span id="selected-count" class="muted">Loading…</span>
-          <span class="links">
-            <a id="select-all">Select all</a>
-            <a id="select-none">Select none</a>
+        <div class="card-row" style="margin-bottom:0.5rem">
+          <span class="muted" style="font-size:0.88rem"><span id="selected-count">Loading…</span> <span id="selected-size"></span></span>
+          <span>
+            <button type="button" class="text-link" id="select-all">Select all</button>
+            &nbsp;·&nbsp;
+            <button type="button" class="text-link" id="select-none">Select none</button>
           </span>
         </div>
-        <div id="book-list"><p class="muted">Loading your library…</p></div>
-        <button type="button" id="start-download" style="margin-top:1rem">⬇ Download selected</button>
-      </article>
+        <div id="book-list"><div class="empty-state">Loading your library…</div></div>
+      </div>
 
-      <article id="progress-section" style="display:none">
-        <div class="toolbar">
-          <h2 style="margin:0">Progress</h2>
+      <div class="card" id="progress-section" style="display:none">
+        <div class="card-row">
+          <h2>Progress</h2>
           <span id="progress-badge" class="badge badge-idle">Idle</span>
         </div>
-        <progress id="progress-bar" value="0" max="100"></progress>
-        <p id="progress-count" class="muted"></p>
+        <div class="progress-track"><div id="progress-bar" class="progress-fill"></div></div>
+        <p id="progress-count" class="muted" style="font-size:0.85rem;margin:0"></p>
         <p id="progress-current"></p>
-        <p id="progress-error" style="color:var(--pico-del-color)"></p>
+        <p id="progress-error" style="color:var(--danger)"></p>
         <ul id="progress-log"></ul>
         <div class="progress-actions">
-          <button type="button" id="cancel-download" class="outline contrast" style="display:none">Stop</button>
+          <button type="button" id="cancel-download" class="btn-danger-ghost" style="display:none">Stop</button>
           <a id="download-link" href="/download/file" style="display:none">
-            <button type="button">💾 Save zip file</button>
+            <button type="button" class="btn-primary">💾 Save zip file</button>
           </a>
         </div>
-      </article>
+      </div>
+
+      <div class="selection-bar" id="selection-bar" style="display:none">
+        <div class="selection-bar-inner">
+          <span class="count" id="bar-count">0 selected</span>
+          <span class="size" id="bar-size"></span>
+          <span class="spacer"></span>
+          <button type="button" id="start-download" class="btn-primary">⬇ Download</button>
+        </div>
+      </div>
 
       <script>
         const state = { books: [], selected: new Set(), filter: '' };
@@ -148,6 +324,11 @@
           const div = document.createElement('div');
           div.textContent = s == null ? '' : String(s);
           return div.innerHTML;
+        }
+
+        function formatSize(mb) {
+          if (mb >= 1024) return (mb / 1024).toFixed(2) + ' GB';
+          return mb.toFixed(1) + ' MB';
         }
 
         async function loadLibrary() {
@@ -160,7 +341,7 @@
             state.selected = new Set(data.books.map(b => b.id));
             renderList();
           } catch (e) {
-            listEl.innerHTML = '<p style="color:var(--pico-del-color)">Could not load your library.</p>';
+            listEl.innerHTML = '<div class="empty-state" style="color:var(--danger)">Could not load your library.</div>';
           }
         }
 
@@ -176,30 +357,57 @@
           const cover = b.cover_url
             ? `<img class="book-cover" src="${escapeHtml(b.cover_url)}" alt="" loading="lazy">`
             : `<span class="book-cover placeholder">${b.is_audio ? '🎧' : '📖'}</span>`;
-          const typeIcon = `<span class="type-icon" title="${b.is_audio ? 'Audiobook' : 'Book'}">${b.is_audio ? '🎧' : '📖'}</span>`;
+          const typeTag = b.is_audio
+            ? `<span class="type-tag audio">Audio</span>`
+            : `<span class="type-tag book">Book</span>`;
+          const sizeText = b.size_mb != null ? `${b.size_mb} MB` : '';
+          const selected = state.selected.has(b.id);
           return `
-            <label class="book-row">
-              <input type="checkbox" data-id="${b.id}" ${state.selected.has(b.id) ? 'checked' : ''}>
+            <label class="book-row ${selected ? 'selected' : ''}" data-row="${b.id}">
+              <input type="checkbox" data-id="${b.id}" ${selected ? 'checked' : ''}>
               ${cover}
               <div class="book-meta">
                 <span class="book-title">${escapeHtml(b.title)}</span>
                 ${b.authors ? `<span class="book-authors">${escapeHtml(b.authors)}</span>` : ''}
               </div>
-              ${typeIcon}
+              ${typeTag}
+              <span class="book-size" id="size-${b.id}">${sizeText}</span>
             </label>
           `;
+        }
+
+        async function fetchSizesInBackground() {
+          // Sequential on purpose -- the backend has a single dedicated
+          // worker thread (Playwright thread-affinity, see session.py), so
+          // "parallel" fetches here would just queue up behind each other
+          // anyway. Runs after the list is already visible/interactive.
+          for (const b of state.books) {
+            if (b.size_mb != null) continue;
+            try {
+              const resp = await fetch(`/library/${b.id}/size`);
+              const data = await resp.json();
+              if (data.ok) {
+                b.size_mb = data.size_mb;
+                const el = document.getElementById(`size-${b.id}`);
+                if (el && b.size_mb != null) el.textContent = `${b.size_mb} MB`;
+                if (state.selected.has(b.id)) updateSelectedCount();
+              }
+            } catch (e) {
+              // best-effort -- leave this row's size blank on failure
+            }
+          }
         }
 
         function renderList() {
           const listEl = document.getElementById('book-list');
           const books = visibleBooks();
           if (state.books.length === 0) {
-            listEl.innerHTML = '<p class="muted">No books found.</p>';
+            listEl.innerHTML = '<div class="empty-state">No books found.</div>';
             updateSelectedCount();
             return;
           }
           if (books.length === 0) {
-            listEl.innerHTML = '<p class="muted">No titles match your filter.</p>';
+            listEl.innerHTML = '<div class="empty-state">No titles match your filter.</div>';
             updateSelectedCount();
             return;
           }
@@ -208,6 +416,7 @@
             cb.addEventListener('change', () => {
               const id = Number(cb.dataset.id);
               if (cb.checked) state.selected.add(id); else state.selected.delete(id);
+              cb.closest('.book-row').classList.toggle('selected', cb.checked);
               updateSelectedCount();
             });
           });
@@ -215,8 +424,22 @@
         }
 
         function updateSelectedCount() {
-          document.getElementById('selected-count').textContent =
-            `${state.selected.size} of ${state.books.length} selected`;
+          const n = state.selected.size;
+          document.getElementById('selected-count').textContent = `${n} of ${state.books.length} selected`;
+
+          let sumMb = 0, unknown = 0;
+          for (const b of state.books) {
+            if (!state.selected.has(b.id)) continue;
+            if (b.size_mb != null) sumMb += b.size_mb;
+            else unknown += 1;
+          }
+          const sizeSummary = n === 0 ? '' : `(~${formatSize(sumMb)}${unknown > 0 ? `, ${unknown} estimating…` : ''})`;
+          document.getElementById('selected-size').textContent = sizeSummary;
+
+          const bar = document.getElementById('selection-bar');
+          bar.style.display = n > 0 ? 'flex' : 'none';
+          document.getElementById('bar-count').textContent = `${n} book${n === 1 ? '' : 's'} selected`;
+          document.getElementById('bar-size').textContent = sizeSummary;
         }
 
         document.getElementById('search-box').addEventListener('input', (e) => {
@@ -234,27 +457,30 @@
         });
 
         document.getElementById('start-download').addEventListener('click', async () => {
-          if (state.selected.size === 0) {
-            alert('Select at least one book first.');
-            return;
+          if (state.selected.size === 0) return;
+          const btn = document.getElementById('start-download');
+          btn.disabled = true;
+          try {
+            const resp = await fetch('/download/start', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                art_ids: Array.from(state.selected),
+                ebook_format: document.getElementById('ebook-format').value,
+                audiobook_format: document.getElementById('audiobook-format').value,
+              }),
+            });
+            const data = await resp.json();
+            if (!data.ok) {
+              alert('Could not start download: ' + (data.error || 'unknown error'));
+              return;
+            }
+            document.getElementById('progress-section').style.display = 'block';
+            document.getElementById('progress-section').scrollIntoView({ behavior: 'smooth' });
+            pollStatus();
+          } finally {
+            btn.disabled = false;
           }
-          const resp = await fetch('/download/start', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              art_ids: Array.from(state.selected),
-              ebook_format: document.getElementById('ebook-format').value,
-              audiobook_format: document.getElementById('audiobook-format').value,
-            }),
-          });
-          const data = await resp.json();
-          if (!data.ok) {
-            alert('Could not start download: ' + (data.error || 'unknown error'));
-            return;
-          }
-          document.getElementById('progress-section').style.display = 'block';
-          document.getElementById('progress-section').scrollIntoView({ behavior: 'smooth' });
-          pollStatus();
         });
 
         document.getElementById('cancel-download').addEventListener('click', async () => {
@@ -281,17 +507,24 @@
           document.getElementById('progress-count').textContent = total ? `${s.done} / ${total} books` : `${s.done} books`;
 
           const bar = document.getElementById('progress-bar');
-          if (total) { bar.value = s.done; bar.max = total; }
-          else { bar.removeAttribute('value'); } // indeterminate
+          if (total) {
+            bar.classList.remove('indeterminate');
+            bar.style.width = Math.min(100, (s.done / total) * 100) + '%';
+          } else if (s.status === 'running') {
+            bar.classList.add('indeterminate');
+          } else {
+            bar.classList.remove('indeterminate');
+            bar.style.width = s.status === 'done' ? '100%' : '0%';
+          }
 
           document.getElementById('progress-current').textContent =
             s.current_title ? `Downloading: ${s.current_title}` : '';
 
           const logEl = document.getElementById('progress-log');
           logEl.innerHTML = s.log.map(item => {
-            if (item.status === 'skipped') return `<li class="skipped">${escapeHtml(item.title)} — no downloadable file</li>`;
-            if (item.status === 'error') return `<li class="error">${escapeHtml(item.title)} — failed (${escapeHtml(item.error || 'error')})</li>`;
-            return `<li class="done">${escapeHtml(item.title)} — ${item.ext}, ${item.size_mb} MB</li>`;
+            if (item.status === 'skipped') return `<li class="skipped"><span class="icon">!</span><span class="title">${escapeHtml(item.title)}</span><span class="detail">no file</span></li>`;
+            if (item.status === 'error') return `<li class="error"><span class="icon">✗</span><span class="title">${escapeHtml(item.title)}</span><span class="detail">failed</span></li>`;
+            return `<li class="done"><span class="icon">✓</span><span class="title">${escapeHtml(item.title)}</span><span class="detail">${item.ext}, ${item.size_mb} MB</span></li>`;
           }).join('');
           logEl.scrollTop = logEl.scrollHeight;
 
@@ -302,6 +535,7 @@
 
         (async function init() {
           await loadLibrary();
+          fetchSizesInBackground();
           const resp = await fetch('/download/status');
           const s = await resp.json();
           if (s.status === 'running' || s.status === 'done' || s.status === 'cancelled') {
@@ -311,19 +545,27 @@
         })();
       </script>
     {% else %}
-      <article>
-        <h2>Log in to litres.ru</h2>
+      <div class="hero">
+        <h1>📚 Your library, backed up.</h1>
+        <p>Log in with your litres.ru account to browse, select, and download your purchased books and audiobooks -- runs entirely on your machine.</p>
+      </div>
+      <div class="card login-card">
+        {% if error %}
+          <div class="error-banner">{{ error }}</div>
+        {% endif %}
         <form method="post" action="/login">
-          <label>Email or phone
+          <div class="field">
+            <label>Email or phone</label>
             <input type="text" name="login" required>
-          </label>
-          <label>Password
+          </div>
+          <div class="field">
+            <label>Password</label>
             <input type="password" name="password" required>
-          </label>
-          <button type="submit">Log in</button>
+          </div>
+          <button type="submit" class="btn-primary" style="width:100%">Log in</button>
         </form>
-      </article>
+      </div>
     {% endif %}
-  </main>
+  </div>
 </body>
 </html>

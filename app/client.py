@@ -27,6 +27,7 @@ actual file -- verified against a real purchased epub).
 """
 from __future__ import annotations
 
+import os
 import time
 from pathlib import Path
 from typing import Iterator, Optional
@@ -34,9 +35,21 @@ from urllib.parse import parse_qs, urlparse
 
 from playwright.sync_api import BrowserContext, sync_playwright
 
+# These are facts about litres.ru itself, not settings -- not configurable.
 API_BASE = "https://api.litres.ru/foundation/api"
 DOWNLOAD_BASE = "https://www.litres.ru"
 LOGIN_PAGE = "https://www.litres.ru/auth/login"
+
+# Set LITRES_HEADLESS=0 to watch the login flow in a real Chromium window
+# (useful for debugging a login/selector problem).
+HEADLESS = os.environ.get("LITRES_HEADLESS", "1").lower() not in ("0", "false", "no")
+
+# Whole-audiobook bundles can be a few hundred MB to ~2GB -- the default 30s
+# Playwright request timeout isn't enough even on a healthy transfer, but
+# litres.ru's CDN can also just stall on a specific file (observed: a 350MB
+# file that never sent a byte and had to be killed after 20s). Override via
+# LITRES_DOWNLOAD_TIMEOUT_MS if your connection or the CDN needs longer/shorter.
+DOWNLOAD_TIMEOUT_MS = int(os.environ.get("LITRES_DOWNLOAD_TIMEOUT_MS", "300000"))
 
 # Ebook formats a user can pick as their default, in the order offered to
 # pick_best_file as a fallback if their choice isn't available for a given
@@ -80,7 +93,7 @@ class LitresClient:
 
     def __init__(self, storage_state_path: Optional[Path] = None):
         self._pw = sync_playwright().start()
-        self._browser = self._pw.chromium.launch(headless=True)
+        self._browser = self._pw.chromium.launch(headless=HEADLESS)
         state = str(storage_state_path) if storage_state_path and storage_state_path.exists() else None
         self.context: BrowserContext = self._browser.new_context(storage_state=state)
         self._extra_headers: dict = {}
@@ -212,13 +225,7 @@ class LitresClient:
     ) -> Path:
         segment = "download_book_subscr" if subscr else "download_book"
         url = f"{DOWNLOAD_BASE}/{segment}/{art_id}/{release_file_id}/{filename}"
-        # Whole-audiobook bundles can be a few hundred MB to ~2GB -- the
-        # default 30s request timeout isn't enough even on a healthy
-        # transfer. But litres.ru's CDN can also just stall on a specific
-        # file (observed: a 350MB file that never sent a byte and had to be
-        # killed after 20s) -- 5 minutes is generous for a real transfer
-        # without leaving the whole app hung for half an hour on a dead one.
-        resp = self._get(url, timeout=300000)
+        resp = self._get(url, timeout=DOWNLOAD_TIMEOUT_MS)
         if not resp.ok:
             raise LitresAuthError(f"Download failed for art {art_id} ({resp.status}): {resp.text()[:300]}")
         dest.parent.mkdir(parents=True, exist_ok=True)

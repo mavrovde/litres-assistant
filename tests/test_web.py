@@ -1,0 +1,228 @@
+"""Tests for the FastAPI routes in app/web.py, using FastAPI's TestClient
+(which drives the real lifespan startup/shutdown) against a monkeypatched
+LitresClient -- no real Playwright/network involved."""
+from __future__ import annotations
+
+import time
+
+from fastapi.testclient import TestClient
+
+from app import credentials, download_job, session
+from app.web import app
+from tests.fakes import client_factory
+
+
+def _wait_until_finished(timeout=2.0):
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if download_job.snapshot()["status"] != "running":
+            return download_job.snapshot()
+        time.sleep(0.005)
+    raise AssertionError("job did not finish in time")
+
+
+def test_index_shows_login_form_when_not_logged_in():
+    with TestClient(app) as client:
+        resp = client.get("/")
+    assert resp.status_code == 200
+    assert 'name="login"' in resp.text  # the login form is present
+    assert 'class="session-chip"' not in resp.text  # the logged-in chip is not
+
+
+def test_index_shows_logged_in_view_after_session_restore(monkeypatch):
+    credentials.save("user@example.com", "hunter2")
+    client_factory(monkeypatch, session)
+
+    with TestClient(app) as client:
+        resp = client.get("/")
+
+    assert resp.status_code == 200
+    assert 'class="session-chip"' in resp.text
+    assert "user@example.com" in resp.text
+
+
+def test_login_success_redirects_home(monkeypatch):
+    client_factory(monkeypatch, session)
+    with TestClient(app) as client:
+        resp = client.post("/login", data={"login": "user@example.com", "password": "hunter2"})
+    assert resp.status_code == 200  # TestClient follows the 303 redirect by default
+    assert resp.url.path == "/"
+    assert session.current_login() == "user@example.com"
+
+
+def test_login_failure_shows_error(monkeypatch):
+    fake = client_factory(monkeypatch, session)
+    fake.fail_login = True
+    with TestClient(app) as client:
+        resp = client.post(
+            "/login", data={"login": "user@example.com", "password": "wrong"}, follow_redirects=False
+        )
+    assert resp.status_code == 401
+    assert "Login failed" in resp.text
+    assert session.current_client() is None
+
+
+def test_logout_clears_session_and_redirects(monkeypatch):
+    client_factory(monkeypatch, session)
+    with TestClient(app) as client:
+        client.post("/login", data={"login": "user@example.com", "password": "hunter2"})
+        resp = client.post("/logout", follow_redirects=False)
+    assert resp.status_code == 303
+    assert session.current_client() is None
+
+
+def test_library_requires_login():
+    with TestClient(app) as client:
+        resp = client.get("/library")
+    assert resp.status_code == 401
+    assert resp.json()["ok"] is False
+
+
+def test_library_returns_expected_shape(monkeypatch):
+    library = [
+        {
+            "id": 1,
+            "title": "Book One",
+            "art_type": 0,
+            "persons": [
+                {"full_name": "Author A", "role": "author"},
+                {"full_name": "Translator T", "role": "translator"},
+            ],
+            "cover_url": "/pub/c/cover/1.jpg",
+        },
+        {"id": 2, "title": "Audiobook Two", "art_type": 1, "persons": [], "cover_url": None},
+    ]
+    client_factory(monkeypatch, session, library=library)
+
+    with TestClient(app) as client:
+        client.post("/login", data={"login": "user@example.com", "password": "hunter2"})
+        resp = client.get("/library")
+
+    assert resp.status_code == 200
+    books = resp.json()["books"]
+    assert books[0] == {
+        "id": 1,
+        "title": "Book One",
+        "authors": "Author A",  # translator excluded, only role == author
+        "is_audio": False,
+        "cover_url": "https://static.litres.ru/pub/c/cover/1.jpg",
+    }
+    assert books[1] == {
+        "id": 2,
+        "title": "Audiobook Two",
+        "authors": "",
+        "is_audio": True,
+        "cover_url": None,
+    }
+
+
+def test_book_size_requires_login():
+    with TestClient(app) as client:
+        resp = client.get("/library/1/size")
+    assert resp.status_code == 401
+
+
+def test_book_size_returns_mb_for_available_file(monkeypatch):
+    client_factory(
+        monkeypatch,
+        session,
+        library=[{"id": 1, "title": "Book One"}],
+        files_by_id={1: [{"id": 100, "extension": "epub", "is_additional": False, "size": 2_400_000}]},
+    )
+    with TestClient(app) as client:
+        client.post("/login", data={"login": "u@example.com", "password": "pw"})
+        resp = client.get("/library/1/size")
+    assert resp.json() == {"ok": True, "size_mb": 2.4}
+
+
+def test_book_size_is_none_when_no_downloadable_file(monkeypatch):
+    client_factory(monkeypatch, session, library=[{"id": 1, "title": "Book One"}], files_by_id={1: []})
+    with TestClient(app) as client:
+        client.post("/login", data={"login": "u@example.com", "password": "pw"})
+        resp = client.get("/library/1/size")
+    assert resp.json() == {"ok": True, "size_mb": None}
+
+
+def test_download_start_requires_login():
+    with TestClient(app) as client:
+        resp = client.post("/download/start", json={})
+    assert resp.status_code == 401
+
+
+def test_download_start_rejects_explicitly_empty_selection(monkeypatch):
+    client_factory(monkeypatch, session, library=[{"id": 1, "title": "Book"}])
+    with TestClient(app) as client:
+        client.post("/login", data={"login": "u@example.com", "password": "pw"})
+        resp = client.post("/download/start", json={"art_ids": []})
+    assert resp.status_code == 400
+    assert "No books selected" in resp.json()["error"]
+
+
+def test_download_start_with_no_art_ids_downloads_everything(monkeypatch):
+    fake = client_factory(
+        monkeypatch,
+        session,
+        library=[{"id": 1, "title": "Book"}],
+        files_by_id={1: [{"id": 100, "extension": "epub", "is_additional": False, "size": 10}]},
+    )
+    with TestClient(app) as client:
+        client.post("/login", data={"login": "u@example.com", "password": "pw"})
+        resp = client.post("/download/start", json={})
+        assert resp.json() == {"ok": True, "started": True}
+    _wait_until_finished()
+    assert fake.download_calls == [1]
+
+
+def test_download_start_returns_started_false_when_already_running(monkeypatch):
+    client_factory(
+        monkeypatch,
+        session,
+        library=[{"id": 1, "title": "Book"}],
+        files_by_id={1: [{"id": 100, "extension": "epub", "is_additional": False, "size": 10}]},
+    )
+    with TestClient(app) as client:
+        client.post("/login", data={"login": "u@example.com", "password": "pw"})
+        first = client.post("/download/start", json={})
+        second = client.post("/download/start", json={})
+    assert first.json()["started"] is True
+    assert second.json()["started"] is False
+    _wait_until_finished()
+
+
+def test_download_cancel_returns_false_when_nothing_running():
+    with TestClient(app) as client:
+        resp = client.post("/download/cancel")
+    assert resp.json() == {"ok": True, "cancelled": False}
+
+
+def test_download_status_default_shape_when_idle():
+    with TestClient(app) as client:
+        resp = client.get("/download/status")
+    body = resp.json()
+    assert body["status"] == "idle"
+    assert body["log"] == []
+
+
+def test_download_file_redirects_when_nothing_downloaded_yet():
+    with TestClient(app) as client:
+        resp = client.get("/download/file", follow_redirects=False)
+    assert resp.status_code == 303
+    assert resp.headers["location"] == "/"
+
+
+def test_download_file_serves_the_completed_zip(monkeypatch):
+    client_factory(
+        monkeypatch,
+        session,
+        library=[{"id": 1, "title": "Book One"}],
+        files_by_id={1: [{"id": 100, "extension": "epub", "is_additional": False, "size": 10}]},
+    )
+    with TestClient(app) as client:
+        client.post("/login", data={"login": "u@example.com", "password": "pw"})
+        client.post("/download/start", json={})
+        _wait_until_finished()
+        resp = client.get("/download/file")
+
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "application/zip"
+    assert resp.content  # non-empty zip bytes

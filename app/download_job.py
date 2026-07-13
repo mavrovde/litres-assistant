@@ -69,7 +69,7 @@ def start(
             status="running",
             current_title=None,
             done=0,
-            total=len(art_ids) if art_ids else None,
+            total=len(art_ids) if art_ids is not None else None,
             log=[],
             error=None,
             zip_path=None,
@@ -110,7 +110,7 @@ def _run(
                     break
 
                 art_id = art.get("id")
-                if art_ids and art_id not in art_ids:
+                if art_ids is not None and art_id not in art_ids:
                     continue
                 title = art.get("title") or str(art_id)
                 with _lock:

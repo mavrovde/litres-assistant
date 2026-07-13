@@ -17,6 +17,7 @@ on anyio's own worker-thread pool (a different pool), strictly before the
 """
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import anyio
@@ -28,9 +29,9 @@ from .client import LitresAuthError
 
 load_dotenv()
 
-mcp = FastMCP("litres-downloader")
+mcp = FastMCP("litres-assistant")
 
-DOWNLOAD_DIR = Path.home() / "Downloads" / "litres-library"
+DOWNLOAD_DIR = Path(os.environ.get("LITRES_DOWNLOAD_DIR", str(Path.home() / "Downloads" / "litres-library")))
 
 
 async def _ensure_logged_in() -> None:

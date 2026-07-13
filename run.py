@@ -1,7 +1,16 @@
-"""Run the local LitRes library downloader on 127.0.0.1 only."""
+"""Run the local LitRes library downloader.
+
+Host is intentionally not configurable: this app holds your logged-in
+litres.ru session, so it's bound to 127.0.0.1 (localhost-only) by design,
+not as a tunable default. Port can be changed via LITRES_APP_PORT if 8420
+is taken by something else.
+"""
+import os
+
 from dotenv import load_dotenv
 import uvicorn
 
 if __name__ == "__main__":
     load_dotenv()
-    uvicorn.run("app.web:app", host="127.0.0.1", port=8420, reload=True)
+    port = int(os.environ.get("LITRES_APP_PORT", "8420"))
+    uvicorn.run("app.web:app", host="127.0.0.1", port=port, reload=True)

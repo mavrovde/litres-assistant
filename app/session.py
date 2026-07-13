@@ -21,9 +21,16 @@ from typing import Optional
 from . import credentials
 from .client import LitresAuthError, LitresClient
 
-SESSION_STATE_PATH = Path(__file__).parent.parent / ".litres_session.json"
+SESSION_STATE_PATH = Path(
+    os.environ.get("LITRES_SESSION_FILE", str(Path(__file__).parent.parent / ".litres_session.json"))
+)
 
 _state = {"client": None, "login": None}
+# max_workers is intentionally fixed at 1, not configurable: Playwright's
+# sync API is tied to whichever single thread created it (see module
+# docstring), so more workers would mean a client's calls landing on a
+# different thread than the one that created it -- an immediate crash, not
+# a performance tuning knob.
 _executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="litres-playwright")
 
 

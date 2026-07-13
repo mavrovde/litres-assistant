@@ -11,7 +11,7 @@ from typing import Optional, Tuple
 import keyring
 import keyring.errors
 
-SERVICE_NAME = "litres-downloader"
+SERVICE_NAME = "litres-assistant"
 _LAST_LOGIN_KEY = "_last_login"
 
 
