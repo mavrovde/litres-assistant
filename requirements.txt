@@ -6,3 +6,4 @@ keyring
 python-dotenv
 playwright
 anyio
+mcp
