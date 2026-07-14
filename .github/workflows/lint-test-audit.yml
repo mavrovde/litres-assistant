@@ -60,12 +60,12 @@ jobs:
       # real browser (LitresClient is always faked/bypassed -- see
       # tests/fakes.py), so only the Python packages are required, not the
       # Chromium binary. Editable installs of all three subprojects (core
-      # first so `litres-core` resolves for web/mcp) plus the dev tooling.
+      # first so `bookvault-core` resolves for web/mcp) plus the dev tooling.
       - name: Install subprojects and test tooling
         run: pip install -e ./core -e ./web -e ./mcp -e ".[dev]"
 
       - name: Run pytest with coverage
-        run: python -m pytest -v --cov=litres_core --cov=litres_web --cov=litres_mcp --cov-report=term-missing
+        run: python -m pytest -v --cov=bookvault_core --cov=bookvault_web --cov=bookvault_mcp --cov-report=term-missing
 
   audit:
     name: Dependency vulnerability audit

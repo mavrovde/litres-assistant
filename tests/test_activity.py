@@ -1,4 +1,4 @@
-"""Tests for litres_web/activity.py -- the single backend state machine.
+"""Tests for bookvault_web/activity.py -- the single backend state machine.
 
 Covers all three activities (PREPARING the zip, the CHECKING size sweep,
 and REFRESHING the library list), the mutual-exclusion guard between them,
@@ -14,9 +14,9 @@ import threading
 import time
 import zipfile
 
-from litres_core import cache
-from litres_core.client import DownloadCancelled
-from litres_web import activity
+from bookvault_core import cache
+from bookvault_core.client import DownloadCancelled
+from bookvault_web import activity
 from tests.fakes import FakeLitresClient
 
 TEXT_FILES = [{"id": 100, "extension": "epub", "is_additional": False, "size": 1_000_000}]  # 1.0 MB

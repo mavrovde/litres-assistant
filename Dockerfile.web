@@ -2,13 +2,13 @@
 #
 # Built on the official Playwright Python image so Chromium and all its system
 # libraries are already present and pinned to the same Playwright version as
-# litres-core (see core/pyproject.toml -- keep these in lockstep).
+# bookvault-core (see core/pyproject.toml -- keep these in lockstep).
 FROM mcr.microsoft.com/playwright/python:v1.61.0-noble
 
 WORKDIR /app
 
 # Install the two packages this image needs (mcp/ is a separate image). core
-# first so `litres-core` resolves for web; non-editable, no build cache kept.
+# first so `bookvault-core` resolves for web; non-editable, no build cache kept.
 COPY core/ ./core/
 COPY web/ ./web/
 RUN pip install --no-cache-dir ./core ./web
@@ -28,4 +28,4 @@ RUN mkdir -p /data
 VOLUME ["/data"]
 EXPOSE 8420
 
-CMD ["litres-web"]
+CMD ["bookvault-web"]

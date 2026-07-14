@@ -8,7 +8,7 @@ older versions receiving security fixes.
 
 ## Reporting a Vulnerability
 
-Please open a [GitHub issue](https://github.com/mavrovde/litres-assistant/issues)
+Please open a [GitHub issue](https://github.com/mavrovde/bookvault/issues)
 describing the problem. Since this runs entirely locally (bound to
 `127.0.0.1`, no server-side component, no telemetry -- see the README's
 "Security notes"), the realistic attack surface is limited to the local

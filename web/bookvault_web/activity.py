@@ -44,8 +44,8 @@ import zipfile
 from pathlib import Path, PurePosixPath
 from typing import Optional
 
-from litres_core import cache, session
-from litres_core.client import DownloadCancelled, LitresBlocked, LitresClient
+from bookvault_core import cache, session
+from bookvault_core.client import DownloadCancelled, LitresBlocked, LitresClient
 
 logger = logging.getLogger(__name__)
 

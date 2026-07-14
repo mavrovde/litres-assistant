@@ -8,8 +8,8 @@ published to `127.0.0.1:8420` on the host (see docker-compose.yml), so the
 localhost-only posture is preserved at the host boundary. Don't set it to
 0.0.0.0 outside a container. Port can be changed via LITRES_APP_PORT.
 
-Launch via the `litres-web` console script (see web/pyproject.toml) or
-`python -m litres_web.run`.
+Launch via the `bookvault-web` console script (see web/pyproject.toml) or
+`python -m bookvault_web.run`.
 """
 import logging
 import os
@@ -49,7 +49,7 @@ def main() -> None:
     if reload:
         kwargs["reload"] = True
         kwargs["reload_dirs"] = [str(Path(__file__).parent)]
-    uvicorn.run("litres_web.app:app", **kwargs)
+    uvicorn.run("bookvault_web.app:app", **kwargs)
 
 
 if __name__ == "__main__":

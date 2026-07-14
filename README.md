@@ -1,15 +1,16 @@
-<h1 align="center">📚 litres-assistant</h1>
+<h1 align="center">📚 BookVault</h1>
 
 <p align="center">
+  <em>Own the books you bought.</em><br>
   <strong>Back up your own purchased litres.ru library — books &amp; audiobooks — entirely from your own machine.</strong><br>
   Browse what you own, pick the titles and format you want, and download them as a zip — with live progress and a stop button.
 </p>
 
 <p align="center">
-  <a href="https://github.com/mavrovde/litres-assistant/actions/workflows/lint-test-audit.yml"><img alt="CI" src="https://github.com/mavrovde/litres-assistant/actions/workflows/lint-test-audit.yml/badge.svg"></a>
-  <a href="https://github.com/mavrovde/litres-assistant/actions/workflows/docker-publish.yml"><img alt="Docker images" src="https://github.com/mavrovde/litres-assistant/actions/workflows/docker-publish.yml/badge.svg"></a>
+  <a href="https://github.com/mavrovde/bookvault/actions/workflows/lint-test-audit.yml"><img alt="CI" src="https://github.com/mavrovde/bookvault/actions/workflows/lint-test-audit.yml/badge.svg"></a>
+  <a href="https://github.com/mavrovde/bookvault/actions/workflows/docker-publish.yml"><img alt="Docker images" src="https://github.com/mavrovde/bookvault/actions/workflows/docker-publish.yml/badge.svg"></a>
   <a href="https://www.python.org/"><img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white"></a>
-  <a href="https://github.com/mavrovde/litres-assistant/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/mavrovde/litres-assistant?sort=semver"></a>
+  <a href="https://github.com/mavrovde/bookvault/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/mavrovde/bookvault?sort=semver"></a>
   <a href="#-security--privacy"><img alt="Runs 100% local" src="https://img.shields.io/badge/runs-100%25%20local-brightgreen"></a>
   <a href="LICENSE"><img alt="License: MIT with attribution" src="https://img.shields.io/badge/license-MIT%20(attribution)-yellow.svg"></a>
 </p>
@@ -20,6 +21,11 @@
 > backup copies of content you already own (format-shifting), using your own authenticated session and the
 > site's own download endpoints. It does **not** crack DRM, bypass payment, or grant access to anything you
 > haven't bought. Keep your downloads for personal use and don't redistribute them. See [Legal &amp; fair use](#-legal--fair-use).
+
+> [!NOTE]
+> **Not affiliated with LitRes.** BookVault is an independent, unofficial project and is not affiliated with,
+> endorsed by, or sponsored by ООО «ЛитРес» (LLC "LitRes"). "LitRes", "ЛитРес", and "litres.ru" are trademarks
+> of their owner, used here only to describe compatibility. See [Trademarks](#trademarks) and [`TRADEMARKS.md`](TRADEMARKS.md).
 
 It comes in two flavours that share the same login/session code:
 
@@ -65,8 +71,8 @@ Pick whichever fits you. Both end with the app at **http://127.0.0.1:8420**.
 ### Option A — Docker (easiest, nothing to install but Docker)
 
 ```bash
-git clone https://github.com/mavrovde/litres-assistant.git
-cd litres-assistant
+git clone https://github.com/mavrovde/bookvault.git
+cd bookvault
 docker compose up -d
 ```
 
@@ -76,12 +82,12 @@ Full details in [Running in Docker](#-running-in-docker).
 ### Option B — Run it locally (Python 3.11+)
 
 ```bash
-git clone https://github.com/mavrovde/litres-assistant.git
-cd litres-assistant
+git clone https://github.com/mavrovde/bookvault.git
+cd bookvault
 python3 -m venv .venv
 .venv/bin/pip install -e ./core -e ./web        # the web app + its shared core
 .venv/bin/playwright install chromium           # one-time browser download
-.venv/bin/litres-web
+.venv/bin/bookvault-web
 ```
 
 Then open **http://127.0.0.1:8420** and log in. Your password is remembered in your OS keychain, so you won't have to log in again next time.
@@ -121,7 +127,7 @@ The MCP server exposes your library to any MCP client (e.g. Claude Desktop) as t
 ```bash
 .venv/bin/pip install -e ./core -e ./mcp
 .venv/bin/playwright install chromium
-.venv/bin/litres-mcp        # or: python -m litres_mcp.server
+.venv/bin/bookvault-mcp        # or: python -m bookvault_mcp.server
 ```
 
 It speaks the MCP **stdio** protocol, so you point a client at it rather than running it by hand. Claude Desktop config:
@@ -129,9 +135,9 @@ It speaks the MCP **stdio** protocol, so you point a client at it rather than ru
 ```json
 {
   "mcpServers": {
-    "litres-assistant": {
-      "command": "/path/to/litres-assistant/.venv/bin/litres-mcp",
-      "cwd": "/path/to/litres-assistant"
+    "bookvault": {
+      "command": "/path/to/bookvault/.venv/bin/bookvault-mcp",
+      "cwd": "/path/to/bookvault"
     }
   }
 }
@@ -147,8 +153,8 @@ Two images are published to the GitHub Container Registry on **every release** �
 
 | Image | Purpose |
 |---|---|
-| `ghcr.io/mavrovde/litres-assistant/web` | The web app |
-| `ghcr.io/mavrovde/litres-assistant/mcp` | The MCP server |
+| `ghcr.io/mavrovde/bookvault/web` | The web app |
+| `ghcr.io/mavrovde/bookvault/mcp` | The MCP server |
 
 Each release tag (`v0.10.0`, …) publishes images tagged with that version, plus `latest`.
 
@@ -190,7 +196,7 @@ Set `LITRES_LOGIN` / `LITRES_PASSWORD` (e.g. in a local `.env` that Compose read
 The containerized MCP server speaks **streamable-http** (not stdio), so point a client at its URL:
 
 ```json
-{ "mcpServers": { "litres-assistant": { "url": "http://127.0.0.1:8421/mcp" } } }
+{ "mcpServers": { "bookvault": { "url": "http://127.0.0.1:8421/mcp" } } }
 ```
 
 <sub>For a non-Docker setup the server still defaults to stdio (see <a href="#-using-it-from-claude-mcp">above</a>). <code>docker run -i …/mcp</code> with <code>LITRES_MCP_TRANSPORT=stdio</code> also works.</sub>
@@ -274,27 +280,27 @@ litres.ru sits behind DDoS-Guard, which decides "bot or human" from more than co
 <br>
 
 ```text
-core/                 litres-core — shared library (own pyproject.toml)
-  litres_core/
+core/                 bookvault-core — shared library (own pyproject.toml)
+  bookvault_core/
     client.py         Playwright-driven login + library/file/download calls
     session.py        login/session-restore + the single dedicated Playwright thread
     credentials.py    password storage via the OS keychain (keyring)
     cache.py          disk cache for library + per-book file listings
-web/                  litres-web — the web app (depends on litres-core)
-  litres_web/
+web/                  bookvault-web — the web app (depends on bookvault-core)
+  bookvault_web/
     app.py            FastAPI: library browser, format defaults, activity control
     activity.py       the one backend state machine
-    run.py            starts uvicorn; the `litres-web` command
+    run.py            starts uvicorn; the `bookvault-web` command
     templates/ static/  HTML + CSS + JS (no build step, no framework)
-mcp/                  litres-mcp — the MCP server (depends on litres-core)
-  litres_mcp/server.py  MCP tools; the `litres-mcp` command
+mcp/                  bookvault-mcp — the MCP server (depends on bookvault-core)
+  bookvault_mcp/server.py  MCP tools; the `bookvault-mcp` command
 tests/                pytest suite — fully mocked, no real Playwright/network
 Dockerfile.web        web-app image (Playwright base)
 Dockerfile.mcp        MCP-server image
 docker-compose.yml    runs + controls both together
 ```
 
-Each subproject has its own `pyproject.toml` and dependencies: installing `litres-web` doesn't pull in the MCP SDK, and vice-versa. Both depend on `litres-core`.
+Each subproject has its own `pyproject.toml` and dependencies: installing `bookvault-web` doesn't pull in the MCP SDK, and vice-versa. Both depend on `bookvault-core`.
 </details>
 
 ---
@@ -323,6 +329,10 @@ This tool is for making **personal backups of books you have fairly bought** on 
 
 You are responsible for using this tool in line with litres.ru's Terms of Service and the copyright law that applies to you. If in doubt, don't. The author provides this software as-is and accepts no liability for misuse (see [License](#-license)).
 
+### Trademarks
+
+**BookVault is an independent, unofficial project — not affiliated with, endorsed by, or sponsored by ООО «ЛитРес» (LLC "LitRes").** "LitRes", "ЛитРес", "litres.ru", and "litres.com" are trademarks or registered trademarks of their owner (ООО «ЛитРес», Moscow). BookVault uses the word "litres" **only nominatively** — to describe what it's compatible with — and uses none of LitRes's logos or branding. Official LitRes sites: [litres.com](https://litres.com/) · [litres.ru](https://www.litres.ru/) · [About LitRes](https://litres.com/about-us/). Full notice: [`TRADEMARKS.md`](TRADEMARKS.md).
+
 ---
 
 ## 🔒 Security &amp; privacy
@@ -338,7 +348,7 @@ Found a security issue? See [`SECURITY.md`](SECURITY.md).
 
 ## ⚠️ Known limitations
 
-Tracked as [GitHub issues](https://github.com/mavrovde/litres-assistant/issues):
+Tracked as [GitHub issues](https://github.com/mavrovde/bookvault/issues):
 
 - **Stop is near-instant** — cancelling interrupts the file currently downloading (polled between streamed chunks; the partial file is discarded). A transfer that stalls without sending any bytes still has to hit its timeout first.
 - **Edge cases** — response-shape assumptions for the library/file endpoints were confirmed against a limited sample of real items; unusual libraries (podcasts, webtoons, DRM-restricted items) may need follow-up fixes.
@@ -349,3 +359,5 @@ Tracked as [GitHub issues](https://github.com/mavrovde/litres-assistant/issues):
 ## 📄 License
 
 Free and open source under the **[MIT License, with attribution](LICENSE)**. Use it, modify it, and share it freely — the only ask is that any distribution or derivative work **visibly credits the original author (Sergii Mavrov) and links back to this repository**. It comes with no warranty.
+
+This license covers BookVault's own source code only; it grants no rights in any third-party trademark (see [Trademarks](#trademarks) and [`TRADEMARKS.md`](TRADEMARKS.md)).

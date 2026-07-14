@@ -1,4 +1,4 @@
-"""Tests for litres_core/session.py: restore/login/logout precedence and
+"""Tests for bookvault_core/session.py: restore/login/logout precedence and
 fallbacks, and the dedicated-thread execution model (run/submit/run_async)
 that everything else relies on for Playwright thread-affinity."""
 from __future__ import annotations
@@ -7,8 +7,8 @@ import threading
 
 import pytest
 
-from litres_core import cache, credentials, session
-from litres_core.client import LitresAuthError
+from bookvault_core import cache, credentials, session
+from bookvault_core.client import LitresAuthError
 from tests.fakes import FakeLitresClient, client_factory
 
 # --------------------------------------------------------------------------

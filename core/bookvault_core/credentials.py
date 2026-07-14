@@ -22,7 +22,7 @@ import keyring.errors
 
 logger = logging.getLogger(__name__)
 
-SERVICE_NAME = "litres-assistant"
+SERVICE_NAME = "bookvault"
 _LAST_LOGIN_KEY = "_last_login"
 
 

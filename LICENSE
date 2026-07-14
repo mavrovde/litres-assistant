@@ -1,7 +1,7 @@
 MIT License (with attribution)
 
 Copyright (c) 2026 Sergii Mavrov
-Source: https://github.com/mavrovde/litres-assistant
+Source: https://github.com/mavrovde/bookvault
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -14,7 +14,7 @@ The above copyright notice (including the author and the source repository
 URL above), and this permission notice, shall be included in all copies or
 substantial portions of the Software. Any distribution or derivative work must
 visibly credit the original author (Sergii Mavrov) and the source repository
-(https://github.com/mavrovde/litres-assistant) in its documentation, "about"
+(https://github.com/mavrovde/bookvault) in its documentation, "about"
 screen, or other user-facing materials.
 
 THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
@@ -24,3 +24,13 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+---
+
+TRADEMARK NOTICE
+
+This license applies to the copyright in this project's own source code only.
+It grants no rights in any trademark. "LitRes", "ЛитРес", "litres.ru", and
+"litres.com" are trademarks or registered trademarks of ООО «ЛитРес» (LLC
+"LitRes"). This project is independent and unofficial, and is not affiliated
+with, endorsed by, or sponsored by LitRes. See TRADEMARKS.md for details.

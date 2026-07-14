@@ -1,4 +1,4 @@
-"""Tests for litres_core/client.py: the pure format-picking logic, and the
+"""Tests for bookvault_core/client.py: the pure format-picking logic, and the
 HTTP-handling logic (pagination, error handling, header merging) exercised
 against a fake Playwright request context instead of the network."""
 from __future__ import annotations
@@ -6,8 +6,8 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from litres_core import client as client_mod
-from litres_core.client import DownloadCancelled, LitresAuthError, LitresBlocked, LitresClient
+from bookvault_core import client as client_mod
+from bookvault_core.client import DownloadCancelled, LitresAuthError, LitresBlocked, LitresClient
 from tests.fakes import FakeAPIResponse, make_bare_client
 
 # --------------------------------------------------------------------------

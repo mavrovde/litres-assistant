@@ -1,9 +1,9 @@
-"""Tests for litres_core/credentials.py against the fake in-memory keyring (see
+"""Tests for bookvault_core/credentials.py against the fake in-memory keyring (see
 conftest.py's autouse fake_keyring fixture -- the real OS keychain is never
 touched by this suite)."""
 from __future__ import annotations
 
-from litres_core import credentials
+from bookvault_core import credentials
 from tests.fakes import NoBackendKeyring
 
 

@@ -1,4 +1,4 @@
-"""Tests for the FastAPI routes in litres_web/app.py, using FastAPI's TestClient
+"""Tests for the FastAPI routes in bookvault_web/app.py, using FastAPI's TestClient
 (which drives the real lifespan startup/shutdown) against a monkeypatched
 LitresClient -- no real Playwright/network involved."""
 from __future__ import annotations
@@ -7,9 +7,9 @@ import time
 
 from fastapi.testclient import TestClient
 
-from litres_core import credentials, session
-from litres_web import activity
-from litres_web.app import app
+from bookvault_core import credentials, session
+from bookvault_web import activity
+from bookvault_web.app import app
 from tests.fakes import client_factory
 
 
@@ -158,7 +158,7 @@ def test_library_serves_stale_cache_while_an_activity_is_busy(monkeypatch):
     # worker thread is busy, e.g. a large download), the route must serve the
     # slightly-stale cached list rather than block on a live re-fetch -- so the
     # library never appears to vanish mid-download.
-    from litres_core import cache
+    from bookvault_core import cache
 
     fake = client_factory(monkeypatch, session, library=[{"id": 1, "title": "Book One"}])
     calls = []
