@@ -22,6 +22,6 @@ htmlcov/
 # Claude Code local (machine-specific) settings
 .claude/settings.local.json
 
-# macOS desktop build artifacts (PyInstaller)
-packaging/macos/build/
-packaging/macos/dist/
+# Desktop build artifacts (PyInstaller / installers)
+packaging/*/build/
+packaging/*/dist/

@@ -1,0 +1,93 @@
+name: Build Windows desktop app
+
+# Build the native Windows onedir app and wrap it in an Inno Setup installer
+# (Setup.exe). Runs on PRs that touch the Windows packaging/desktop code (build
+# check), on every release tag (attaches Setup.exe to the GitHub Release), and
+# on demand. Separate from docker-publish.yml so the web/mcp publish is
+# unaffected. Unsigned dev build; Chromium is fetched on first run.
+on:
+  pull_request:
+    paths:
+      - "packaging/windows/**"
+      - "packaging/entry.py"
+      - "desktop/**"
+      - ".github/workflows/desktop-windows.yml"
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write   # upload the Setup.exe asset to the release
+
+jobs:
+  build:
+    name: Windows Setup.exe
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install the desktop app + PyInstaller
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ./core -e ./web -e ./desktop pyinstaller
+          # pywebview's Windows (EdgeChromium) backend needs pythonnet/clr_loader
+          # so PyInstaller's pythonnet hook bundles Python.Runtime.dll.
+          pip install pythonnet clr_loader
+
+      - name: Install Inno Setup
+        run: choco install innosetup -y --no-progress
+
+      - name: Resolve version
+        shell: pwsh
+        run: |
+          # On a tag build use the release version; on PRs/dispatch GITHUB_REF_NAME
+          # is e.g. '123/merge', so force a dev default instead.
+          if ($env:GITHUB_REF_TYPE -eq 'tag') {
+            $Version = $env:GITHUB_REF_NAME -replace '^v',''
+          } else {
+            $Version = '0.0.0-dev'
+          }
+          "APP_VERSION=$Version" >> $env:GITHUB_ENV
+
+      - name: Build onedir with PyInstaller
+        shell: pwsh
+        run: |
+          $env:BOOKVAULT_VERSION = $env:APP_VERSION
+          Set-Location packaging/windows
+          pyinstaller --noconfirm --clean BookVault.spec
+          if (-not (Test-Path "dist/BookVault/BookVault.exe")) {
+            throw "PyInstaller did not produce dist/BookVault/BookVault.exe"
+          }
+
+      - name: Compile the installer with Inno Setup
+        shell: pwsh
+        run: |
+          $iscc = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          Set-Location packaging/windows
+          & $iscc "/DAppVersion=$env:APP_VERSION" "BookVault.iss"
+          if ($LASTEXITCODE -ne 0) { throw "iscc failed with exit code $LASTEXITCODE" }
+
+      - name: Upload Setup.exe as a workflow artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: BookVault-windows-setup
+          path: packaging/windows/dist/BookVault-Setup-*.exe
+          if-no-files-found: error
+
+      - name: Attach Setup.exe to the release
+        if: startsWith(github.ref, 'refs/tags/')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $exe = Get-ChildItem packaging/windows/dist/BookVault-Setup-*.exe | Select-Object -First 1
+          # Tolerate the release not existing yet (tag pushed before `gh release create`).
+          gh release create "$env:GITHUB_REF_NAME" --generate-notes 2>$null
+          gh release upload "$env:GITHUB_REF_NAME" "$($exe.FullName)" --clobber
