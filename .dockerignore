@@ -1,0 +1,22 @@
+# Keep the build context small and secrets out of the image. The Dockerfiles
+# only COPY core/ + web/ (or mcp/), but excluding the rest speeds the build and
+# guarantees nothing sensitive is ever sent to the daemon.
+.git/
+.github/
+.venv/
+**/__pycache__/
+**/*.pyc
+.pytest_cache/
+.ruff_cache/
+
+# Secrets and local state -- must never enter an image or its build context.
+.env
+.litres_session.json
+.litres_cache.json
+
+# Not needed at runtime.
+tests/
+*.md
+!README.md
+docker-compose.yml
+Dockerfile.*

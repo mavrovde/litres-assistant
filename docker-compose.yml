@@ -1,0 +1,47 @@
+# Run and control both the web app and the MCP server together.
+#
+#   docker compose up -d          # start both (uses prebuilt ghcr images)
+#   docker compose up -d --build  # build locally from the Dockerfiles instead
+#   docker compose logs -f web    # follow one service's logs
+#   docker compose stop mcp       # stop just the MCP server
+#   docker compose down           # stop both (the named volume persists)
+#
+# Both services share one named volume (litres-data), so logging in through the
+# web app also authenticates the MCP server -- they read the same session
+# cookies. Ports are published to 127.0.0.1 ONLY: the containers bind 0.0.0.0
+# internally, but nothing outside this machine can reach them -- preserving the
+# app's localhost-only, single-user design.
+
+services:
+  web:
+    image: ghcr.io/mavrovde/litres-assistant/web:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    ports:
+      - "127.0.0.1:8420:8420"   # http://127.0.0.1:8420 -- localhost-only
+    volumes:
+      - litres-data:/data
+    environment:
+      LITRES_LOG_LEVEL: ${LITRES_LOG_LEVEL:-INFO}
+    restart: unless-stopped
+
+  mcp:
+    image: ghcr.io/mavrovde/litres-assistant/mcp:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.mcp
+    ports:
+      - "127.0.0.1:8421:8421"   # MCP over streamable-http at http://127.0.0.1:8421/mcp
+    volumes:
+      - litres-data:/data
+    environment:
+      LITRES_LOG_LEVEL: ${LITRES_LOG_LEVEL:-INFO}
+      # Optional: bootstrap a headless MCP session from credentials instead of
+      # logging in via the web app. Leave unset to rely on the shared session.
+      LITRES_LOGIN: ${LITRES_LOGIN:-}
+      LITRES_PASSWORD: ${LITRES_PASSWORD:-}
+    restart: unless-stopped
+
+volumes:
+  litres-data:

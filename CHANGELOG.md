@@ -1,5 +1,45 @@
 # Changelog
 
+## [0.10.0] - Docker images for the web app and MCP server
+
+Both entry points now ship as container images, published to the GitHub
+Container Registry on every release (`ghcr.io/mavrovde/litres-assistant/web`
+and `.../mcp`, tagged with the version + `latest`). A `docker compose up -d`
+starts and controls both.
+
+### Added
+- **Two Dockerfiles** (`Dockerfile.web`, `Dockerfile.mcp`) on the official
+  Playwright image, so Chromium and its system libraries are already present.
+- **`docker-compose.yml`** runs both services sharing one named volume
+  (`litres-data` at `/data`) -- so logging in through the web app also
+  authenticates the MCP server (shared session cookies), and the cache +
+  downloads persist across restarts. Ports are published to `127.0.0.1` only,
+  preserving the localhost-only design.
+- **`.github/workflows/docker-publish.yml`** builds and pushes both images to
+  ghcr.io on each `v*` tag.
+- **MCP `streamable-http` transport.** In a container there's no stdin to
+  attach, so the MCP server can run as a long-lived networked service
+  (`LITRES_MCP_TRANSPORT=streamable-http`, reachable at
+  `http://host:8421/mcp`) that Compose can start/stop. Defaults to stdio for
+  direct/Claude-Desktop use.
+- New env vars: `LITRES_APP_HOST`, `LITRES_RELOAD`, `LITRES_MCP_TRANSPORT`,
+  `LITRES_MCP_HOST`, `LITRES_MCP_PORT`.
+
+### Changed
+- **`credentials` degrades gracefully when there's no OS keychain** (a headless
+  container): `save`/`load_last`/`forget` catch `NoKeyringError` and fall back
+  to session-only instead of crashing the login. No password is written to the
+  container -- the saved browser session (on the volume) keeps you logged in;
+  re-login via the web form once it lapses.
+- The web server's bind host and reload are now env-configurable
+  (`LITRES_APP_HOST`, `LITRES_RELOAD`) -- defaults unchanged for local runs.
+- **README overhaul** -- restructured with a table of contents, badges,
+  features, and clearer quick-start paths, plus a **Legal & fair use** section
+  (this tool only backs up books you have fairly purchased -- no DRM
+  circumvention, no redistribution).
+- Added a **LICENSE** (MIT, with an attribution requirement: credit the author
+  and link the source in any distribution or derivative work).
+
 ## [0.9.0] - Don't provoke DDoS-Guard
 
 DDoS-Guard (litres.ru's anti-bot layer) decides "bot or human" from the TLS

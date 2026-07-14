@@ -30,6 +30,8 @@ from litres_core.client import LitresAuthError
 
 load_dotenv()
 
+logger = logging.getLogger(__name__)
+
 mcp = FastMCP("litres-assistant")
 
 DOWNLOAD_DIR = Path(os.environ.get("LITRES_DOWNLOAD_DIR", str(Path.home() / "Downloads" / "litres-library")))
@@ -112,13 +114,27 @@ async def download_book(art_id: int) -> dict:
 
 
 def main() -> None:
-    # Logs go to stderr, not stdout -- stdout is the MCP stdio transport
-    # itself, and any stray log line there would corrupt the protocol stream.
+    # Logs go to stderr, not stdout -- under the stdio transport, stdout IS the
+    # MCP protocol stream, and any stray log line there would corrupt it.
     logging.basicConfig(
         level=os.environ.get("LITRES_LOG_LEVEL", "INFO").upper(),
         format="%(asctime)s %(levelname)-8s %(name)s: %(message)s",
     )
-    mcp.run()
+    # Default stdio: launched by an MCP client (Claude Desktop) with stdin
+    # attached, incl. `docker run -i`. In the Docker Compose deployment there's
+    # no attached stdin, so the container runs a network transport instead
+    # (LITRES_MCP_TRANSPORT=streamable-http) -- a long-lived service Compose can
+    # start/stop and an MCP client connects to over http://host:port/mcp.
+    transport = os.environ.get("LITRES_MCP_TRANSPORT", "stdio").lower()
+    if transport in ("http", "streamable_http", "streamable-http"):
+        transport = "streamable-http"
+    if transport in ("streamable-http", "sse"):
+        mcp.settings.host = os.environ.get("LITRES_MCP_HOST", "127.0.0.1")
+        mcp.settings.port = int(os.environ.get("LITRES_MCP_PORT", "8421"))
+        logger.info("Starting MCP server over %s at %s:%s", transport, mcp.settings.host, mcp.settings.port)
+        mcp.run(transport=transport)
+    else:
+        mcp.run()  # stdio
 
 
 if __name__ == "__main__":

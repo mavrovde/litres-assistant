@@ -1,0 +1,31 @@
+# The web app: browse your litres.ru library and download it as a zip.
+#
+# Built on the official Playwright Python image so Chromium and all its system
+# libraries are already present and pinned to the same Playwright version as
+# litres-core (see core/pyproject.toml -- keep these in lockstep).
+FROM mcr.microsoft.com/playwright/python:v1.61.0-noble
+
+WORKDIR /app
+
+# Install the two packages this image needs (mcp/ is a separate image). core
+# first so `litres-core` resolves for web; non-editable, no build cache kept.
+COPY core/ ./core/
+COPY web/ ./web/
+RUN pip install --no-cache-dir ./core ./web
+
+# Bind 0.0.0.0 *inside the container* so the published port can reach it; the
+# host side publishes to 127.0.0.1 (see docker-compose.yml), preserving the
+# app's localhost-only posture. No reload in a container. Everything that must
+# survive a restart lives on the /data volume.
+ENV LITRES_APP_HOST=0.0.0.0 \
+    LITRES_APP_PORT=8420 \
+    LITRES_RELOAD=0 \
+    LITRES_LOG_LEVEL=INFO \
+    LITRES_SESSION_FILE=/data/.litres_session.json \
+    LITRES_CACHE_FILE=/data/.litres_cache.json
+
+RUN mkdir -p /data
+VOLUME ["/data"]
+EXPOSE 8420
+
+CMD ["litres-web"]

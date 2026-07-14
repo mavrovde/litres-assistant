@@ -29,8 +29,8 @@ python3 -m venv .venv
 .venv/bin/litres-mcp        # or: .venv/bin/python -m litres_mcp.server
 ```
 
-It speaks the MCP stdio protocol, so you normally point a client at it
-rather than running it by hand. Claude Desktop config:
+By default it speaks the MCP **stdio** protocol, so you normally point a
+client at it rather than running it by hand. Claude Desktop config:
 
 ```json
 {
@@ -42,6 +42,20 @@ rather than running it by hand. Claude Desktop config:
   }
 }
 ```
+
+### Networked transport / Docker
+
+Set `LITRES_MCP_TRANSPORT=streamable-http` to run it as a long-lived HTTP
+service instead of stdio (binds `LITRES_MCP_HOST:LITRES_MCP_PORT`, default
+`127.0.0.1:8421`). This is how the Docker image runs it -- a container has no
+stdin to attach. Clients then connect by URL:
+
+```json
+{ "mcpServers": { "litres-assistant": { "url": "http://127.0.0.1:8421/mcp" } } }
+```
+
+See the repo root `README.md` ("Running in Docker") for the `docker compose`
+setup that runs this alongside the web app and shares its login session.
 
 ## Configuration (environment)
 
@@ -57,6 +71,8 @@ through its page instead.
 | `LITRES_DOWNLOAD_DIR` | `~/Downloads/litres-library` | Where `download_book` saves files. |
 | `LITRES_SESSION_FILE` | `.litres_session.json` (CWD) | Cached browser session (cookies), shared with the web app. |
 | `LITRES_HEADLESS` | `1` | Set to `0` to watch the login flow in a real Chromium window. |
-| `LITRES_LOG_LEVEL` | `INFO` | Log verbosity (`DEBUG`/`INFO`/`WARNING`/`ERROR`). Logs go to stderr -- stdout is the MCP transport. |
+| `LITRES_MCP_TRANSPORT` | `stdio` | `stdio` (client-launched) or `streamable-http` (networked service; used by Docker). |
+| `LITRES_MCP_HOST` / `LITRES_MCP_PORT` | `127.0.0.1` / `8421` | Bind host/port for the `streamable-http` transport. |
+| `LITRES_LOG_LEVEL` | `INFO` | Log verbosity (`DEBUG`/`INFO`/`WARNING`/`ERROR`). Logs go to stderr -- under stdio, stdout is the MCP transport. |
 
 See the repo root `README.md` for the overall project and the web app.
