@@ -342,10 +342,18 @@ def _run_prepare(
     workdir = Path(tempfile.mkdtemp(prefix="litres-"))
     zip_path = workdir / "litres-library.zip"
     try:
-        # Audiobook bundles/text formats are already compressed -- STORED
-        # avoids burning CPU re-deflating gigabytes of mp3/epub for no size
-        # benefit.
-        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_STORED) as zf:
+        # DEFLATE at the lowest level (not STORED). The members are epubs and
+        # zip_with_mp3 audiobooks -- themselves zip files. Stored uncompressed,
+        # each member's raw zip signatures (including its own
+        # end-of-central-directory marker, PK\x05\x06) appear verbatim inside
+        # the outer archive, so a scanning parser sees several EOCD markers and
+        # can't tell which is the real one: macOS Archive Utility then refuses
+        # the whole file with "Unsupported format" (the CLI `unzip`/`ditto`,
+        # which read the true central directory, are unaffected). Any real
+        # DEFLATE level rewrites the member bytes so those nested signatures no
+        # longer appear raw -- level 1 is enough and stays cheap on the
+        # already-compressed content (no meaningful size change).
+        with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED, compresslevel=1) as zf:
             cancelled = False
             for art in _iter_books(client):
                 if _cancel_event.is_set():

@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.7.1] - Fix "unsupported format" when opening the downloaded zip
+
+### Fixed
+- The library zip is now built with DEFLATE compression instead of STORED.
+  Its members (epubs, `zip_with_mp3` audiobooks) are themselves zip files;
+  stored uncompressed, each member's raw end-of-central-directory signature
+  (`PK\x05\x06`) leaked verbatim into the outer archive, so macOS Archive
+  Utility saw several such markers and refused the whole file with
+  "Unsupported format" (command-line `unzip`/`ditto`, which read the real
+  central directory, were unaffected). A light DEFLATE (level 1) rewrites the
+  member bytes so those nested signatures no longer appear raw, at negligible
+  CPU/size cost on the already-compressed content. Double-clicking the
+  download now extracts correctly, with proper non-Latin (e.g. Cyrillic)
+  filenames.
+
 ## [0.7.0] - Split into subprojects; env credentials are MCP-only
 
 ### Changed
