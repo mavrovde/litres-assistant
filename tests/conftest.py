@@ -6,7 +6,7 @@ from __future__ import annotations
 
 import pytest
 
-from litres_core import cache, credentials, session
+from litres_core import cache, client, credentials, session
 from litres_web import activity
 from tests.fakes import FakeKeyring
 
@@ -31,6 +31,11 @@ def isolated_module_state(tmp_path, monkeypatch):
     # No real pacing sleep between size fetches in tests -- the sweep's
     # behaviour is what's under test, not litres.ru-friendliness timing.
     monkeypatch.setattr(activity, "PACE_SECONDS", 0)
+    # Likewise, anti-bot retry backoff runs with zero delay in tests, so the
+    # retry *logic* is exercised without the suite actually sleeping. A test
+    # that cares about timing overrides these locally.
+    monkeypatch.setattr(client, "RETRY_BASE_DELAY", 0)
+    monkeypatch.setattr(client, "RETRY_MAX_DELAY", 0)
 
     def _reset():
         session._state["client"] = None

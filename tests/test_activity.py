@@ -51,7 +51,7 @@ def _record_get_files(client):
     calls = []
     original = client.get_files
 
-    def recording(art_id):
+    def recording(art_id, should_cancel=None):
         calls.append(art_id)
         return original(art_id)
 
@@ -368,6 +368,24 @@ def test_check_uses_cached_file_listings_without_calling_get_files():
     assert calls == []  # cache hit -- litres.ru never touched
 
 
+def test_cache_only_sweep_resolves_cached_but_never_fetches_live():
+    # The automatic on-load sweep (live=False) must resolve sizes already on
+    # disk and touch litres.ru zero times for the rest -- so just opening the
+    # app never fires a library's worth of size requests.
+    cache.set_library([{"id": 1, "title": "A"}, {"id": 2, "title": "B"}])
+    cache.set_files(1, TEXT_FILES)  # book 1 cached; book 2 is not
+    client = FakeLitresClient(files_by_id={2: TEXT_FILES})
+    calls = _record_get_files(client)
+
+    activity.check_sizes(client, live=False)
+    result = wait_until_idle()
+
+    assert calls == []  # cache-only: no live fetch for the uncached book
+    assert result["sizes"] == {1: 1.0}  # only the cached book resolved
+    assert 2 not in result["sizes"]  # the uncached book was left unresolved
+    assert "Refresh" in result["message"]  # user is told how to fetch the rest
+
+
 def test_check_resolves_selected_books_first():
     cache.set_library([{"id": 1, "title": "A"}, {"id": 2, "title": "B"}, {"id": 3, "title": "C"}])
     client = FakeLitresClient(files_by_id={1: TEXT_FILES, 2: TEXT_FILES, 3: TEXT_FILES})
@@ -395,7 +413,7 @@ def test_check_survives_a_per_book_fetch_failure():
     client = FakeLitresClient(files_by_id={1: TEXT_FILES, 2: TEXT_FILES})
     original = client.get_files
 
-    def flaky(art_id):
+    def flaky(art_id, should_cancel=None):
         if art_id == 1:
             raise RuntimeError("socket hang up")
         return original(art_id)
@@ -425,7 +443,7 @@ def test_cancel_stops_the_size_sweep_before_the_next_book():
     client = FakeLitresClient(files_by_id={1: TEXT_FILES, 2: TEXT_FILES, 3: TEXT_FILES})
     original = client.get_files
 
-    def fetch_then_cancel_after_first(art_id):
+    def fetch_then_cancel_after_first(art_id, should_cancel=None):
         files = original(art_id)
         if art_id == 1:
             activity.cancel()
@@ -434,7 +452,7 @@ def test_cancel_stops_the_size_sweep_before_the_next_book():
     client.get_files = fetch_then_cancel_after_first
     calls = []
     inner = client.get_files
-    client.get_files = lambda art_id: (calls.append(art_id), inner(art_id))[1]
+    client.get_files = lambda art_id, should_cancel=None: (calls.append(art_id), inner(art_id))[1]
 
     activity.check_sizes(client)
     result = wait_until_idle()
@@ -497,7 +515,7 @@ def test_only_one_activity_runs_at_a_time():
     gate = threading.Event()
     client = FakeLitresClient(files_by_id={1: TEXT_FILES})
 
-    def blocking_get_files(art_id):
+    def blocking_get_files(art_id, should_cancel=None):
         gate.wait(timeout=2.0)
         return TEXT_FILES
 

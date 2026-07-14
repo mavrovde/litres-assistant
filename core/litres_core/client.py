@@ -29,13 +29,29 @@ from __future__ import annotations
 
 import logging
 import os
+import random
 import time
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator, Optional
 from urllib.parse import parse_qs, urlparse
 
 import httpx
 from playwright.sync_api import BrowserContext, sync_playwright
+
+# curl_cffi lets the (streaming) download carry a real Chrome TLS/JA3+JA4
+# fingerprint, so it matches the Chromium session that solved DDoS-Guard's
+# challenge -- a plain httpx client has a Python/OpenSSL fingerprint that,
+# even with valid __ddg* cookies, can be re-challenged/403'd (see the
+# download path below). Optional: if it isn't importable we fall back to
+# httpx so the app still works, just with a less browser-like fingerprint.
+try:
+    from curl_cffi import requests as cffi_requests
+
+    _CURL_CFFI_AVAILABLE = True
+except Exception:  # pragma: no cover - exercised only where curl_cffi is absent
+    cffi_requests = None
+    _CURL_CFFI_AVAILABLE = False
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +70,19 @@ HEADLESS = os.environ.get("LITRES_HEADLESS", "1").lower() not in ("0", "false", 
 # file that never sent a byte and had to be killed after 20s). Override via
 # LITRES_DOWNLOAD_TIMEOUT_MS if your connection or the CDN needs longer/shorter.
 DOWNLOAD_TIMEOUT_MS = int(os.environ.get("LITRES_DOWNLOAD_TIMEOUT_MS", "300000"))
+
+# Retry/backoff for transient anti-bot blocks (DDoS-Guard 403 / 429 / 503).
+# A block is soft: waiting a moment (and re-warming the __ddg* cookies via a
+# page visit) usually clears it, so we retry rather than failing the item and
+# marching on -- marching on is exactly the hammering pattern that escalates a
+# soft block into a hard one. A genuine litres 403 (rights-limited book) is
+# NOT a DDoS-Guard block and is not retried (see _is_block).
+MAX_TRANSIENT_RETRIES = int(os.environ.get("LITRES_MAX_RETRIES", "3"))
+RETRY_BASE_DELAY = float(os.environ.get("LITRES_RETRY_BASE_DELAY", "2.0"))
+RETRY_MAX_DELAY = float(os.environ.get("LITRES_RETRY_MAX_DELAY", "30.0"))
+# Statuses worth retrying *when accompanied by a DDoS-Guard signature* (403)
+# or on their own (429/503 are always transient rate-limit/unavailable).
+_ALWAYS_RETRY_STATUS = {429, 503}
 
 # Ebook formats a user can pick as their default, in the order offered to
 # pick_best_file as a fallback if their choice isn't available for a given
@@ -85,9 +114,116 @@ class LitresAuthError(RuntimeError):
     """Login failed, or an existing session is no longer valid."""
 
 
+class LitresBlocked(LitresAuthError):
+    """An anti-bot check (DDoS-Guard) or rate limit turned us away -- a
+    *transient* block distinct from a real auth failure or a rights-limited
+    book. Subclasses LitresAuthError so existing callers still treat it as a
+    failure, but the retry layer can catch it specifically. `retry_after` is
+    the server's Retry-After hint in seconds when it sent one."""
+
+    def __init__(self, message: str, retry_after: Optional[float] = None):
+        super().__init__(message)
+        self.retry_after = retry_after
+
+
 class DownloadCancelled(RuntimeError):
     """Raised by download_file when cancellation is requested mid-transfer --
     distinct from a real failure so the caller can treat it as a clean stop."""
+
+
+def _is_ddos_guard(headers, body: bytes = b"") -> bool:
+    """True if a response looks like a DDoS-Guard challenge/block rather than
+    litres.ru's own reply. DDoS-Guard fronts the site, so its responses carry
+    a `Server: ddos-guard` header (and its challenge HTML mentions it); a
+    genuine litres 403 (e.g. a rights-limited book) does neither."""
+    server = ""
+    try:
+        server = (headers.get("server") or headers.get("Server") or "").lower()
+    except Exception:
+        server = ""
+    if "ddos-guard" in server:
+        return True
+    return b"ddos-guard" in (body[:2048] or b"").lower()
+
+
+def _is_block(status: int, headers=None, body: bytes = b"") -> bool:
+    """Whether a status should be treated as a transient anti-bot/rate-limit
+    block worth retrying: 429/503 always, 403 only when it carries a
+    DDoS-Guard signature (a bare 403 is usually a rights-limited item)."""
+    if status in _ALWAYS_RETRY_STATUS:
+        return True
+    if status == 403:
+        return _is_ddos_guard(headers or {}, body)
+    return False
+
+
+def _retry_after_seconds(headers) -> Optional[float]:
+    """Parse a Retry-After header (delta-seconds form) into a float, or None."""
+    try:
+        raw = headers.get("retry-after") or headers.get("Retry-After")
+    except Exception:
+        raw = None
+    if not raw:
+        return None
+    try:
+        return max(0.0, float(str(raw).strip()))
+    except (TypeError, ValueError):
+        return None  # HTTP-date form is rare here; fall back to our own backoff
+
+
+def _backoff_delay(attempt: int, retry_after: Optional[float]) -> float:
+    """Delay before retry `attempt` (0-based): honor Retry-After if given,
+    else exponential (RETRY_BASE_DELAY * 2**attempt) capped at RETRY_MAX_DELAY,
+    plus jitter. Jitter matters twice over: it avoids a thundering-herd retry
+    and makes our timing look less mechanically scripted to the anti-bot."""
+    if retry_after is not None:
+        base = min(retry_after, RETRY_MAX_DELAY)
+    else:
+        base = min(RETRY_BASE_DELAY * (2 ** attempt), RETRY_MAX_DELAY)
+    return base + random.uniform(0, min(1.0, base * 0.25))
+
+
+def _sleep_interruptible(seconds: float, should_cancel=None) -> bool:
+    """Sleep up to `seconds`, checking should_cancel() ~10x/sec so a backoff
+    pause doesn't swallow a Stop. Returns True if it slept the whole time,
+    False if cancellation was requested partway through."""
+    if should_cancel is None:
+        time.sleep(seconds)
+        return True
+    deadline = time.monotonic() + seconds
+    while time.monotonic() < deadline:
+        if should_cancel():
+            return False
+        time.sleep(min(0.1, max(0.0, deadline - time.monotonic())))
+    return True
+
+
+# Headers the curl_cffi Chrome impersonation should own, so the browser-shaped
+# headers (User-Agent, client hints, encoding) stay internally consistent with
+# the impersonated TLS/JA4 fingerprint rather than being overwritten by ones
+# captured from a possibly different Chromium build. Auth/app headers
+# (app-id, session-id, ...) are still forwarded.
+_IMPERSONATE_OWNS = {
+    "user-agent",
+    "sec-ch-ua",
+    "sec-ch-ua-mobile",
+    "sec-ch-ua-platform",
+    "accept-encoding",
+}
+
+
+class _StreamResp:
+    """A tiny transport-agnostic view over a streamed HTTP response, so the
+    download loop is identical whether the bytes come from curl_cffi (real
+    Chrome fingerprint, production) or httpx (test MockTransport / fallback).
+    `iter_chunks(size)` yields body chunks; `read_all()` buffers the whole
+    body (only used to snippet an error/challenge page)."""
+
+    def __init__(self, status_code, headers, iter_chunks, read_all):
+        self.status_code = int(status_code)
+        self.headers = headers
+        self.iter_chunks = iter_chunks
+        self.read_all = read_all
 
 
 class LitresClient:
@@ -122,6 +258,67 @@ class LitresClient:
     def _get(self, url: str, **kwargs):
         headers = {**self._extra_headers, **kwargs.pop("headers", {})}
         return self.context.request.get(url, headers=headers, **kwargs)
+
+    @staticmethod
+    def _resp_body(resp) -> bytes:
+        """Best-effort body bytes from a Playwright APIResponse for block
+        detection / error snippets -- never raises."""
+        try:
+            return resp.body() or b""
+        except Exception:
+            return b""
+
+    def _get_retrying(self, url: str, *, should_cancel=None, **kwargs):
+        """GET through the browser request context, retrying transient
+        anti-bot blocks (DDoS-Guard 403 / 429 / 503) with jittered backoff and
+        a __ddg* cookie re-warm between tries. Returns the APIResponse; the
+        caller still handles ordinary (non-block) error statuses. Raises
+        LitresBlocked if still blocked after MAX_TRANSIENT_RETRIES."""
+        resp = self._get(url, **kwargs)
+        for attempt in range(MAX_TRANSIENT_RETRIES):
+            if resp.ok:
+                return resp
+            body = self._resp_body(resp)
+            if not _is_block(resp.status, resp.headers, body):
+                return resp  # ordinary error -- let the caller shape the message
+            delay = _backoff_delay(attempt, _retry_after_seconds(resp.headers))
+            logger.warning(
+                "Anti-bot block on GET %s (HTTP %s, server=%s) -- retry %d/%d in %.1fs",
+                url, resp.status, (resp.headers or {}).get("server", "?"),
+                attempt + 1, MAX_TRANSIENT_RETRIES, delay,
+            )
+            self._rewarm_cookies()
+            _sleep_interruptible(delay, should_cancel)
+            resp = self._get(url, **kwargs)
+        if not resp.ok and _is_block(resp.status, resp.headers, self._resp_body(resp)):
+            raise LitresBlocked(
+                f"Blocked by litres.ru anti-bot/rate-limit ({resp.status}) after "
+                f"{MAX_TRANSIENT_RETRIES} retries -- wait a bit and try again",
+                retry_after=_retry_after_seconds(resp.headers),
+            )
+        return resp
+
+    def _rewarm_cookies(self) -> None:
+        """Refresh the DDoS-Guard __ddg* cookies by visiting the site in the
+        real browser (the same trick as _recapture_headers). The cookies
+        rotate by time/request-count and are bound to the browser that
+        obtained them, so a fresh visit after a block hands the retry a clean,
+        consistent set. Best-effort: any failure just leaves the old cookies."""
+        try:
+            page = self.context.new_page()
+        except Exception as exc:  # tests' fake context, or a closed browser
+            logger.debug("Cookie re-warm could not open a page: %s", exc)
+            return
+        try:
+            page.goto(LOGIN_PAGE, wait_until="networkidle", timeout=20000)
+            logger.info("Re-warmed DDoS-Guard cookies via a page visit")
+        except Exception as exc:
+            logger.debug("Cookie re-warm navigation failed: %s", exc)
+        finally:
+            try:
+                page.close()
+            except Exception:
+                pass
 
     def is_logged_in(self) -> bool:
         if not self._extra_headers and not self._recapture_headers():
@@ -218,7 +415,7 @@ class LitresClient:
         params = {"limit": limit}
         page_count, item_count = 0, 0
         while True:
-            resp = self._get(url, params=params)
+            resp = self._get_retrying(url, params=params)
             if not resp.ok:
                 logger.warning("Library fetch failed: HTTP %s", resp.status)
                 raise LitresAuthError(f"Library fetch failed ({resp.status}): {resp.text()[:300]}")
@@ -239,11 +436,13 @@ class LitresClient:
             # server's next-page link against our known-good endpoint --
             # the path portion of `next_page` doesn't match our base URL.
             params = {k: v[0] for k, v in parse_qs(urlparse(next_page).query).items()}
-            time.sleep(0.3)  # personal-use client, not a scraper -- don't hammer the API
+            # Personal-use client, not a scraper -- don't hammer the API, and
+            # jitter the gap so the cadence doesn't look mechanically scripted.
+            time.sleep(random.uniform(0.3, 0.7))
 
-    def get_files(self, art_id) -> list:
+    def get_files(self, art_id, should_cancel=None) -> list:
         """Flat list of {id, extension, file_type, mime, size, is_additional} for one art."""
-        resp = self._get(f"{API_BASE}/arts/{art_id}/files/grouped")
+        resp = self._get_retrying(f"{API_BASE}/arts/{art_id}/files/grouped", should_cancel=should_cancel)
         if not resp.ok:
             logger.warning("File listing failed for art %s: HTTP %s", art_id, resp.status)
             raise LitresAuthError(f"Could not list files for art {art_id} ({resp.status}): {resp.text()[:300]}")
@@ -285,59 +484,129 @@ class LitresClient:
     def file_extension(file_entry: dict) -> str:
         return file_entry.get("extension") or EXT_BY_FILE_TYPE.get(file_entry.get("file_type")) or "fb2"
 
-    def download_file(
-        self, art_id, release_file_id, filename: str, dest: Path, subscr: bool = False,
-        should_cancel=None, on_progress=None,
-    ) -> Path:
-        segment = "download_book_subscr" if subscr else "download_book"
-        url = f"{DOWNLOAD_BASE}/{segment}/{art_id}/{release_file_id}/{filename}"
-        dest.parent.mkdir(parents=True, exist_ok=True)
-        # Stream the response straight to disk in fixed-size chunks rather than
-        # buffering the whole file in memory. Whole-audiobook bundles can be
-        # ~2GB; Playwright's request client only exposes a full-body read
-        # (resp.body()), which meant ~2GB resident per download and the machine
-        # swapping. We reuse the browser context's cookies (incl. the DataDome
-        # __ddg* anti-bot cookies) and the captured app-level headers, so this
-        # carries the same authentication/anti-bot profile as the rest of the
-        # client -- Playwright's request client is itself a separate HTTP client
-        # from the browser, so nothing about the bot fingerprint changes here.
-        #
-        # `should_cancel`, if given, is polled between chunks so a Stop can
-        # interrupt an in-flight transfer within ~one chunk rather than having
-        # to wait for the whole (possibly ~2GB) file to finish -- the streaming
-        # loop is what makes mid-transfer cancellation possible at all.
-        #
-        # `on_progress(written, total)`, if given, is called after each chunk
-        # with the bytes written so far and the total from Content-Length (or
-        # None if the server didn't send one) -- the same streaming loop is
-        # what lets us report live download progress at all.
-        cookies = {c["name"]: c["value"] for c in self.context.cookies()}
-        timeout = httpx.Timeout(DOWNLOAD_TIMEOUT_MS / 1000)
-        logger.debug("Streaming GET %s (timeout=%dms)", url, DOWNLOAD_TIMEOUT_MS)
-        written = 0
-        try:
+    @contextmanager
+    def _http_stream(self, url: str, headers: dict, cookies: dict, timeout_s: float):
+        """Open a streaming GET and yield a transport-agnostic `_StreamResp`.
+
+        Production uses curl_cffi impersonating Chrome, so the download's
+        TLS/JA3+JA4 fingerprint matches the Chromium session that solved
+        DDoS-Guard's challenge -- a plain-Python fingerprint, even with valid
+        __ddg* cookies, is a common cause of download-only 403s. Tests inject
+        an httpx MockTransport (`self._httpx_transport`) to run offline, and if
+        curl_cffi isn't importable we fall back to plain httpx (works, just a
+        less browser-like fingerprint). Either way the caller's streaming loop
+        is identical. Whole-audiobook bundles can be ~2GB, so we never buffer
+        the body -- both engines stream in chunks."""
+        use_httpx = self._httpx_transport is not None or not _CURL_CFFI_AVAILABLE
+        if use_httpx:
+            timeout = httpx.Timeout(timeout_s)
             with httpx.Client(
                 transport=self._httpx_transport, follow_redirects=True, timeout=timeout, cookies=cookies
             ) as http:
-                with http.stream("GET", url, headers=self._extra_headers) as resp:
-                    if resp.status_code != 200:
-                        snippet = resp.read()[:300].decode("utf-8", "replace")
-                        logger.warning("Download request failed for art %s: HTTP %s", art_id, resp.status_code)
-                        raise LitresAuthError(
-                            f"Download failed for art {art_id} ({resp.status_code}): {snippet}"
+                with http.stream("GET", url, headers=headers) as resp:
+                    yield _StreamResp(
+                        resp.status_code,
+                        resp.headers,
+                        lambda size: resp.iter_bytes(chunk_size=size),
+                        lambda: resp.read(),
+                    )
+        else:
+            # Let the impersonation own the browser-shaped headers so they stay
+            # consistent with its TLS/JA4 fingerprint; still forward auth/app
+            # headers (app-id, session-id, ...).
+            fwd = {k: v for k, v in headers.items() if k.lower() not in _IMPERSONATE_OWNS}
+            with cffi_requests.Session() as s:
+                resp = s.get(
+                    url, headers=fwd, cookies=cookies, impersonate="chrome",
+                    timeout=timeout_s, stream=True, allow_redirects=True,
+                )
+                try:
+                    yield _StreamResp(
+                        resp.status_code,
+                        resp.headers,
+                        lambda size: resp.iter_content(chunk_size=size),
+                        lambda: resp.content,
+                    )
+                finally:
+                    resp.close()
+
+    def _download_once(self, url, headers, cookies, dest, should_cancel, on_progress, art_id) -> Path:
+        """One streaming attempt: raises LitresBlocked on an anti-bot/rate-limit
+        block (so the caller can back off and retry), LitresAuthError on any
+        other bad status, DownloadCancelled if Stop fires mid-transfer (the
+        partial file is discarded), else streams to `dest` and returns it."""
+        written = 0
+        timeout_s = DOWNLOAD_TIMEOUT_MS / 1000
+        try:
+            with self._http_stream(url, headers, cookies, timeout_s) as resp:
+                if resp.status_code != 200:
+                    body = resp.read_all() or b""
+                    server = (resp.headers or {}).get("server", "?")
+                    if _is_block(resp.status_code, resp.headers, body):
+                        logger.warning(
+                            "Download blocked for art %s: HTTP %s (server=%s)",
+                            art_id, resp.status_code, server,
                         )
-                    total = int(resp.headers.get("content-length") or 0) or None
-                    with open(dest, "wb") as f:
-                        for chunk in resp.iter_bytes(chunk_size=1024 * 1024):
-                            if should_cancel is not None and should_cancel():
-                                raise DownloadCancelled(f"Download cancelled mid-transfer for art {art_id}")
-                            f.write(chunk)
-                            written += len(chunk)
-                            if on_progress is not None:
-                                on_progress(written, total)
+                        raise LitresBlocked(
+                            f"Download blocked for art {art_id} ({resp.status_code})",
+                            retry_after=_retry_after_seconds(resp.headers),
+                        )
+                    snippet = body[:300].decode("utf-8", "replace")
+                    logger.warning(
+                        "Download request failed for art %s: HTTP %s (server=%s)",
+                        art_id, resp.status_code, server,
+                    )
+                    raise LitresAuthError(
+                        f"Download failed for art {art_id} ({resp.status_code}): {snippet}"
+                    )
+                total = int((resp.headers or {}).get("content-length") or 0) or None
+                with open(dest, "wb") as f:
+                    for chunk in resp.iter_chunks(1024 * 1024):
+                        if should_cancel is not None and should_cancel():
+                            raise DownloadCancelled(f"Download cancelled mid-transfer for art {art_id}")
+                        f.write(chunk)
+                        written += len(chunk)
+                        if on_progress is not None:
+                            on_progress(written, total)
         except DownloadCancelled:
             dest.unlink(missing_ok=True)  # discard the partial file
             logger.info("Cancelled download of art %s mid-transfer (%d bytes discarded)", art_id, written)
             raise
         logger.debug("Streamed %d bytes to %s", written, dest)
         return dest
+
+    def download_file(
+        self, art_id, release_file_id, filename: str, dest: Path, subscr: bool = False,
+        should_cancel=None, on_progress=None,
+    ) -> Path:
+        """Stream a purchased file to `dest`, retrying transient anti-bot
+        blocks (DDoS-Guard 403 / 429 / 503) with jittered backoff and a
+        __ddg* cookie re-warm between tries -- rather than failing the item and
+        moving on, which is the very pattern that hardens a soft block.
+
+        `should_cancel`, if given, is polled between chunks (and during backoff
+        sleeps) so a Stop interrupts an in-flight transfer within ~one chunk.
+        `on_progress(written, total)`, if given, reports live byte progress."""
+        segment = "download_book_subscr" if subscr else "download_book"
+        url = f"{DOWNLOAD_BASE}/{segment}/{art_id}/{release_file_id}/{filename}"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        logger.debug("Streaming GET %s (timeout=%dms)", url, DOWNLOAD_TIMEOUT_MS)
+        for attempt in range(MAX_TRANSIENT_RETRIES + 1):
+            cookies = {c["name"]: c["value"] for c in self.context.cookies()}
+            try:
+                return self._download_once(
+                    url, dict(self._extra_headers), cookies, dest, should_cancel, on_progress, art_id
+                )
+            except LitresBlocked as exc:
+                if attempt >= MAX_TRANSIENT_RETRIES:
+                    logger.warning("Download still blocked for art %s after %d attempts", art_id, attempt + 1)
+                    raise
+                delay = _backoff_delay(attempt, exc.retry_after)
+                logger.warning(
+                    "Download blocked for art %s -- retry %d/%d in %.1fs",
+                    art_id, attempt + 1, MAX_TRANSIENT_RETRIES, delay,
+                )
+                self._rewarm_cookies()  # fresh __ddg* cookies for the retry
+                if not _sleep_interruptible(delay, should_cancel):
+                    raise DownloadCancelled(f"Download cancelled during backoff for art {art_id}")
+        raise LitresBlocked(f"Download blocked for art {art_id}")  # unreachable, keeps type-checkers happy

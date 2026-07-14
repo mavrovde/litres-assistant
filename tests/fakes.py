@@ -12,11 +12,14 @@ from litres_core.client import LitresAuthError, LitresClient
 class FakeAPIResponse:
     """Stands in for Playwright's APIResponse."""
 
-    def __init__(self, status=200, json_data=None, text_data="", body_data=b""):
+    def __init__(self, status=200, json_data=None, text_data="", body_data=b"", headers=None):
         self.status = status
         self._json = json_data if json_data is not None else {}
         self._text = text_data
         self._body_data = body_data
+        # Response headers -- read by the client's anti-bot block detection
+        # (Server header) and Retry-After parsing.
+        self.headers = headers if headers is not None else {}
 
     @property
     def ok(self):
@@ -108,7 +111,7 @@ class FakeLitresClient:
     def iter_library(self, limit: int = 100):
         yield from self.library
 
-    def get_files(self, art_id):
+    def get_files(self, art_id, should_cancel=None):
         return self.files_by_id.get(art_id, [])
 
     def pick_best_file(self, files, preferred_ext=None, preferred_file_type=None):

@@ -6,7 +6,8 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from litres_core.client import DownloadCancelled, LitresAuthError, LitresClient
+from litres_core import client as client_mod
+from litres_core.client import DownloadCancelled, LitresAuthError, LitresBlocked, LitresClient
 from tests.fakes import FakeAPIResponse, make_bare_client
 
 # --------------------------------------------------------------------------
@@ -274,15 +275,55 @@ def test_download_file_reports_none_total_without_content_length(tmp_path):
     assert calls and all(total is None for _, total in calls)
 
 
-def test_download_file_raises_on_failure_status(tmp_path):
+def test_download_file_raises_on_non_block_failure_without_retrying(tmp_path):
+    # A plain failure (not an anti-bot block -- e.g. a rights-limited 403 with
+    # no DDoS-Guard signature) must fail immediately, not enter the retry loop.
+    calls = {"n": 0}
+
+    def handler(request):
+        calls["n"] += 1
+        return httpx.Response(403, text="Forbidden")  # no ddos-guard server/body
+
     client = make_bare_client(lambda *a: None)
-    client._httpx_transport = httpx.MockTransport(
-        lambda request: httpx.Response(403, text="DDoS-Guard")
-    )
+    client._httpx_transport = httpx.MockTransport(handler)
     dest = tmp_path / "should-not-be-created.epub"
     with pytest.raises(LitresAuthError, match="403"):
         client.download_file(1, 2, "book.epub", dest)
     assert not dest.exists()
+    assert calls["n"] == 1  # single-shot -- a non-block failure is not retried
+
+
+def test_download_retries_a_ddos_guard_block_then_succeeds(tmp_path):
+    # A DDoS-Guard 403 (Server: ddos-guard) is transient: back off, re-warm,
+    # retry -- and the retry, this time getting a 200, streams the file.
+    calls = {"n": 0}
+
+    def handler(request):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            return httpx.Response(403, headers={"server": "ddos-guard"}, content=b"blocked")
+        return httpx.Response(200, content=b"the book bytes")
+
+    client = make_bare_client(lambda *a: None)
+    client._httpx_transport = httpx.MockTransport(handler)
+    dest = tmp_path / "book.epub"
+    client.download_file(1, 2, "book.epub", dest)
+    assert dest.read_bytes() == b"the book bytes"
+    assert calls["n"] == 2  # one block, one successful retry
+
+
+def test_download_gives_up_after_max_retries_on_persistent_block(tmp_path):
+    calls = {"n": 0}
+
+    def handler(request):
+        calls["n"] += 1
+        return httpx.Response(429, content=b"slow down")  # always rate-limited
+
+    client = make_bare_client(lambda *a: None)
+    client._httpx_transport = httpx.MockTransport(handler)
+    with pytest.raises(LitresBlocked):
+        client.download_file(1, 2, "book.epub", tmp_path / "book.epub")
+    assert calls["n"] == client_mod.MAX_TRANSIENT_RETRIES + 1  # initial try + retries
 
 
 def test_download_file_cancels_mid_transfer_and_discards_the_partial(tmp_path):
@@ -314,3 +355,52 @@ def test_get_merges_extra_headers_with_explicit_headers():
     client = make_bare_client(handler, extra_headers={"app-id": "115", "session-id": "abc"})
     client._get("https://api.litres.ru/foundation/api/users/me", headers={"X-Extra": "1"})
     assert seen == {"app-id": "115", "session-id": "abc", "X-Extra": "1"}
+
+
+# --------------------------------------------------------------------------
+# Anti-bot / DDoS-Guard block detection + retry (see client.py's helpers).
+# --------------------------------------------------------------------------
+
+
+def test_is_block_distinguishes_ddos_guard_from_ordinary_403():
+    assert client_mod._is_block(403, {"server": "ddos-guard"}, b"")  # header signature
+    assert client_mod._is_block(403, {}, b"...DDoS-Guard challenge...")  # body signature
+    assert not client_mod._is_block(403, {"server": "nginx"}, b"Forbidden")  # rights-limited
+    assert client_mod._is_block(429, {}, b"")  # rate limit -- always transient
+    assert client_mod._is_block(503, {}, b"")  # unavailable -- always transient
+    assert not client_mod._is_block(404, {}, b"")  # genuine not-found is not a block
+
+
+def test_retry_after_seconds_parses_delta_seconds_only():
+    assert client_mod._retry_after_seconds({"retry-after": "5"}) == 5.0
+    assert client_mod._retry_after_seconds({"Retry-After": "0"}) == 0.0
+    assert client_mod._retry_after_seconds({}) is None
+    assert client_mod._retry_after_seconds({"retry-after": "Wed, 21 Oct 2026 07:28:00 GMT"}) is None
+
+
+def test_get_retrying_recovers_from_a_transient_api_block():
+    # A 429 on an API GET is retried (with backoff, zeroed in tests) and the
+    # second attempt's 200 is returned -- get_files/iter_library go through this.
+    seq = [
+        FakeAPIResponse(status=429, headers={"server": "ddos-guard"}),
+        FakeAPIResponse(status=200, json_data={"payload": {"data": []}}),
+    ]
+    calls = {"n": 0}
+
+    def handler(url, params, headers, timeout):
+        resp = seq[min(calls["n"], len(seq) - 1)]
+        calls["n"] += 1
+        return resp
+
+    client = make_bare_client(handler)
+    assert client.get_files(1) == []  # empty grouped payload -> [] (no error)
+    assert calls["n"] == 2  # one block, one success
+
+
+def test_get_files_raises_blocked_after_persistent_api_block():
+    def handler(url, params, headers, timeout):
+        return FakeAPIResponse(status=503)  # always unavailable
+
+    client = make_bare_client(handler)
+    with pytest.raises(LitresBlocked):
+        client.get_files(1)

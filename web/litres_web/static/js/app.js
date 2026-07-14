@@ -420,7 +420,9 @@ document.getElementById('cancel-download').addEventListener('click', () => {
     // to it; don't kick off a competing size sweep.
     startPolling();
   } else {
-    // Idle: start the background size sweep, then poll it to completion.
-    startActivity('/activity/check', { selected: Array.from(state.selected) });
+    // Idle: resolve any already-cached sizes (cache-only -- live:false), so
+    // just opening/reloading the app never fires a library's worth of size
+    // requests at litres.ru. Live size fetching happens on explicit Refresh.
+    startActivity('/activity/check', { selected: Array.from(state.selected), live: false });
   }
 })();

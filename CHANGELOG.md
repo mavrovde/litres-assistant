@@ -1,5 +1,45 @@
 # Changelog
 
+## [0.9.0] - Don't provoke DDoS-Guard
+
+DDoS-Guard (litres.ru's anti-bot layer) decides "bot or human" from the TLS
+handshake (JA3/JA4), the HTTP request shape, request cadence, and IP -- not
+just cookies. This release makes the client behave like the low-volume,
+personal tool it is, so it stops tripping those false-positive checks.
+
+### Fixed
+- **Downloads now carry the browser's TLS fingerprint.** API calls run inside
+  Chromium, but downloads stream over a separate HTTP client (Playwright's
+  request client can't stream, and audiobook bundles reach ~2GB). That client
+  was plain `httpx` -- a Python/OpenSSL JA3/JA4 that, even with valid `__ddg*`
+  cookies, could be re-challenged/403'd. `download_file` now uses `curl_cffi`
+  impersonating Chrome, so the download's fingerprint matches the session that
+  solved the challenge (measured: JA3 and JA4 both differ from httpx, and it
+  negotiates HTTP/2 like Chrome). Falls back to `httpx` if `curl_cffi` isn't
+  importable.
+
+### Added
+- **Retry with backoff + cookie re-warm on transient blocks.** A DDoS-Guard
+  403 / 429 / 503 now triggers: honor `Retry-After`, jittered exponential
+  backoff, a `__ddg*` cookie re-warm via a quick page visit, then retry --
+  instead of failing the item and immediately hitting the next one (the
+  pattern that hardens a soft block). A genuine litres 403 (rights-limited
+  book) carries no DDoS-Guard signature and is not retried. New env vars:
+  `LITRES_MAX_RETRIES`, `LITRES_RETRY_BASE_DELAY`, `LITRES_RETRY_MAX_DELAY`.
+- **Instrumentation:** failed downloads/API calls log the response `Server`
+  header, so a DDoS-Guard block is distinguishable from a litres app error in
+  the logs.
+
+### Changed
+- **Opening the app no longer sweeps every book's size.** The automatic
+  on-load sweep is now cache-only (resolves sizes already on disk, zero
+  litres.ru calls); live per-book size fetches happen only on an explicit
+  Refresh. This removes the biggest bulk-request pattern the app produced.
+- **Jittered pacing** between live size fetches and library pages, so the
+  cadence doesn't look mechanically scripted.
+- Anti-bot backoff sleeps are interruptible by Stop, so cancelling stays
+  responsive even while a request is being retried.
+
 ## [0.8.0] - Live download progress; library survives long downloads
 
 ### Added
