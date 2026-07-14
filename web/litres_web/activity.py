@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import logging
 import os
+import random
 import shutil
 import tempfile
 import threading
@@ -44,7 +45,7 @@ from pathlib import Path, PurePosixPath
 from typing import Optional
 
 from litres_core import cache, session
-from litres_core.client import DownloadCancelled, LitresClient
+from litres_core.client import DownloadCancelled, LitresBlocked, LitresClient
 
 logger = logging.getLogger(__name__)
 
@@ -130,9 +131,11 @@ def size_of_files(files: list) -> Optional[float]:
     return round(size / 1e6, 1) if size else None
 
 
-def fetch_size(client: LitresClient, art_id) -> tuple[Optional[float], list]:
-    """Live-fetch a book's file listing and return (size_mb, files)."""
-    files = client.get_files(art_id)
+def fetch_size(client: LitresClient, art_id, should_cancel=None) -> tuple[Optional[float], list]:
+    """Live-fetch a book's file listing and return (size_mb, files).
+    `should_cancel` lets an anti-bot backoff inside get_files be interrupted
+    by a Stop rather than blocking the sweep for the full retry window."""
+    files = client.get_files(art_id, should_cancel=should_cancel)
     return size_of_files(files), files
 
 
@@ -178,14 +181,19 @@ def refresh(client: LitresClient, selected: Optional[list] = None) -> bool:
     return True
 
 
-def check_sizes(client: LitresClient, selected: Optional[list] = None) -> bool:
+def check_sizes(client: LitresClient, selected: Optional[list] = None, live: bool = True) -> bool:
     """Sweep the cached library's book sizes (CHECKING), paced to be gentle
-    on litres.ru. `selected` ids, if given, are checked first. Returns False
-    if an activity is already running."""
+    on litres.ru. `selected` ids, if given, are checked first. When
+    `live` is False the sweep is *cache-only*: it resolves sizes already on
+    disk and touches litres.ru zero times -- used by the automatic sweep on an
+    idle page load, so simply opening/reloading the app never fires a
+    library's worth of size requests (the pattern anti-bot checks flag most).
+    Live fetching is reserved for the explicit Refresh. Returns False if an
+    activity is already running."""
     if not _begin(CHECKING):
         return False
-    logger.info("Starting size sweep")
-    session.submit(_run_check, client, selected)
+    logger.info("Starting size sweep (live=%s)", live)
+    session.submit(_run_check, client, selected, live)
     return True
 
 
@@ -241,31 +249,39 @@ def _pending_size_ids(books: list, selected: Optional[list]) -> list:
     return ids
 
 
-def _sweep_sizes(client: LitresClient, books: list, selected: Optional[list]) -> None:
+def _sweep_sizes(client: LitresClient, books: list, selected: Optional[list], do_live: bool = True) -> None:
     """The paced per-book size loop. Assumes the machine is already in
     CHECKING (or will be moved to STOPPING by cancel()). Always lands back
-    at IDLE with a result of done or cancelled."""
+    at IDLE with a result of done or cancelled.
+
+    When `do_live` is False the sweep is cache-only: books whose file listing
+    isn't already cached are left unresolved instead of being fetched, so the
+    sweep makes zero litres.ru requests (see check_sizes)."""
     pending = _pending_size_ids(books, selected)
     total = len(pending)
     _update(done=0, total=total)
     done = 0
+    skipped = 0
     for art_id in pending:
         if _cancel_event.is_set():
             break
         cached = cache.get_files(art_id)
-        try:
-            if cached is not None:
-                size_mb = size_of_files(cached)  # cache hit -- no litres.ru call, no pacing
-                live = False
-            else:
-                size_mb, files = fetch_size(client, art_id)
+        if cached is not None:
+            size_mb = size_of_files(cached)  # cache hit -- no litres.ru call, no pacing
+            live = False
+        elif not do_live:
+            skipped += 1  # cache-only sweep: don't touch litres.ru for this one
+            continue
+        else:
+            try:
+                size_mb, files = fetch_size(client, art_id, should_cancel=_cancel_event.is_set)
                 cache.set_files(art_id, files)
                 live = True
-        except Exception as exc:
-            # Best-effort, same as the old frontend loop: leave this row's
-            # size blank and move on rather than aborting the whole sweep.
-            logger.info("Size fetch failed for art %s: %s", art_id, exc)
-            size_mb, live = None, False
+            except Exception as exc:
+                # Best-effort, same as the old frontend loop: leave this row's
+                # size blank and move on rather than aborting the whole sweep.
+                logger.info("Size fetch failed for art %s: %s", art_id, exc)
+                size_mb, live = None, False
         done += 1
         with _lock:
             _state["sizes"][art_id] = size_mb
@@ -276,25 +292,28 @@ def _sweep_sizes(client: LitresClient, books: list, selected: Optional[list]) ->
                 else ""
             )
         if live and not _cancel_event.is_set():
-            time.sleep(PACE_SECONDS)
+            # Jittered gap between live fetches -- a fixed interval is itself a
+            # scripted-traffic tell; randomizing it mirrors human-ish pacing.
+            time.sleep(random.uniform(PACE_SECONDS, PACE_SECONDS * 2.5))
 
     cancelled = _cancel_event.is_set()
-    _update(
-        state=IDLE,
-        result="cancelled" if cancelled else "done",
-        message=(
-            f"Stopped -- checked {done} of {total} size{'' if total == 1 else 's'}."
-            if cancelled
-            else f"Checked sizes for {done} of {total} book{'' if total == 1 else 's'}."
-        ),
+    if cancelled:
+        message = f"Stopped -- checked {done} of {total} size{'' if total == 1 else 's'}."
+    elif skipped:
+        message = f"Showing {done} cached size{'' if done == 1 else 's'} -- Refresh to fetch the other {skipped}."
+    else:
+        message = f"Checked sizes for {done} of {total} book{'' if total == 1 else 's'}."
+    _update(state=IDLE, result="cancelled" if cancelled else "done", message=message)
+    logger.info(
+        "Size sweep %s: %d resolved, %d skipped (cache-only)",
+        "cancelled" if cancelled else "finished", done, skipped,
     )
-    logger.info("Size sweep %s: %d/%d checked", "cancelled" if cancelled else "finished", done, total)
 
 
-def _run_check(client: LitresClient, selected: Optional[list]) -> None:
+def _run_check(client: LitresClient, selected: Optional[list], live: bool = True) -> None:
     try:
         books = cache.get_library() or []
-        _sweep_sizes(client, books, selected)
+        _sweep_sizes(client, books, selected, do_live=live)
     except Exception as exc:
         logger.exception("Size sweep crashed")
         _update(state=IDLE, result="error", error=_friendly_error(exc), message="")
@@ -404,7 +423,7 @@ def _run_prepare(
                 try:
                     files = cache.get_files(art_id)
                     if files is None:
-                        files = client.get_files(art_id)
+                        files = client.get_files(art_id, should_cancel=_cancel_event.is_set)
                         cache.set_files(art_id, files)
                     best = client.pick_best_file(files, preferred_ext, preferred_file_type)
                     if best is None:
@@ -501,10 +520,16 @@ def _friendly_error(exc: Exception) -> str:
     a non-technical user."""
     text = str(exc)
     lower = text.lower()
-    if "ddos-guard" in lower:
-        return "Blocked by litres.ru's anti-bot check (DDoS-Guard) -- wait a bit, then retry this book."
+    # A LitresBlocked that reaches here survived the client's own retries +
+    # cookie re-warm, so it's a genuinely persistent anti-bot/rate-limit block:
+    # waiting a few minutes is the only thing that helps (retrying now won't).
+    if isinstance(exc, LitresBlocked) or "ddos-guard" in lower:
+        return "litres.ru's anti-bot check kept blocking this even after automatic retries -- wait a few minutes, then try again."
     if "(403)" in text:
-        return "Blocked by litres.ru (403 Forbidden) -- wait a bit, then retry this book."
+        # Not an anti-bot block (the client already tried both the purchase and
+        # subscription download endpoints and litres refused both) -- retrying
+        # won't change the answer, so don't tell the user to.
+        return "litres.ru won't serve this title (403) -- it may be subscription-only, region-locked, or preview-only. The other books still downloaded."
     if "(429)" in text:
         return "Rate-limited by litres.ru (429) -- wait a few minutes before retrying."
     if "(401)" in text or "permissionmissing" in lower:

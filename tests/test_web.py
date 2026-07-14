@@ -211,7 +211,7 @@ def test_book_size_second_request_is_served_from_cache_not_refetched(monkeypatch
     calls = []
     original = fake.get_files
 
-    def counting_get_files(art_id):
+    def counting_get_files(art_id, should_cancel=None):
         calls.append(art_id)
         return original(art_id)
 
@@ -256,7 +256,7 @@ def test_book_size_requires_login():
 def test_book_size_returns_clean_error_instead_of_crashing(monkeypatch):
     fake = client_factory(monkeypatch, session, library=[{"id": 1, "title": "Book One"}])
 
-    def broken_get_files(art_id):
+    def broken_get_files(art_id, should_cancel=None):
         raise RuntimeError("Event loop is closed! Is Playwright already stopped?")
 
     fake.get_files = broken_get_files

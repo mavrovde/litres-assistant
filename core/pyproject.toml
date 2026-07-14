@@ -4,13 +4,18 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "litres-core"
-version = "0.8.0"
+version = "0.9.0"
 description = "Shared core for LitRes Assistant: Playwright-driven litres.ru client, dedicated-thread session management, OS-keychain credentials, and a disk cache."
 requires-python = ">=3.11"
 dependencies = [
     "playwright==1.61.0",
     "keyring==25.7.0",
     "httpx==0.28.1",
+    # Downloads stream through curl_cffi impersonating Chrome so their
+    # TLS/JA3+JA4 fingerprint matches the browser session that solved
+    # DDoS-Guard's challenge (see client.download_file). httpx is kept as a
+    # fallback / test-transport engine.
+    "curl_cffi==0.15.0",
 ]
 
 [tool.setuptools]

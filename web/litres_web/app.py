@@ -169,6 +169,11 @@ class PrepareRequest(BaseModel):
 
 class SweepRequest(BaseModel):
     selected: Optional[List[int]] = None
+    # False = cache-only sweep (resolve sizes already on disk, no litres.ru
+    # calls). The frontend's automatic on-load sweep sends False so merely
+    # opening the app never fires a library's worth of size requests; the
+    # explicit Refresh sends the default (live).
+    live: bool = True
 
 
 @app.get("/activity")
@@ -190,7 +195,7 @@ def check_activity(req: SweepRequest):
     client = session.current_client()
     if client is None:
         return JSONResponse({"ok": False, "error": "Not logged in"}, status_code=401)
-    started = activity.check_sizes(client, req.selected)
+    started = activity.check_sizes(client, req.selected, live=req.live)
     return {"ok": True, "started": started}
 
 

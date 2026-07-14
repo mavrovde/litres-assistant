@@ -126,6 +126,38 @@ so `session.py` funnels every call that touches a `LitresClient` (library
 listing, file lookups, downloads) through one dedicated worker thread --
 see that module's docstring for the details.
 
+### Staying under DDoS-Guard's radar
+
+litres.ru sits behind DDoS-Guard, which decides "bot or human" from more
+than cookies: it fingerprints the **TLS handshake (JA3/JA4)** and the HTTP
+request shape, and watches request *cadence* and IP. Since this is a
+personal, low-volume backup tool -- not a scraper -- the goal is simply to
+not trip those false-positive checks. Several things work together:
+
+- **Downloads carry the same TLS fingerprint as the browser.** API calls run
+  inside Chromium (via Playwright), but file downloads must *stream* to disk
+  (audiobook bundles reach ~2GB), and Playwright's request client only offers
+  a full-body read. So downloads go over a separate HTTP client -- and a
+  plain-Python one has a Python/OpenSSL TLS fingerprint that, even with valid
+  `__ddg*` cookies, can be re-challenged. `download_file` therefore uses
+  [`curl_cffi`](https://github.com/lexiforest/curl_cffi) impersonating Chrome,
+  so the download's JA3/JA4 matches the session that solved the challenge. (If
+  `curl_cffi` isn't importable, it falls back to plain `httpx` -- still works,
+  just a less browser-like fingerprint.)
+- **Transient blocks are retried, not hammered past.** On a DDoS-Guard 403 /
+  429 / 503 the client honors any `Retry-After`, backs off with jittered
+  exponential delay, re-warms the `__ddg*` cookies via a quick page visit, and
+  retries -- instead of failing the item and immediately hitting the next one,
+  which is exactly the pattern that escalates a soft block into a hard one. A
+  genuine litres 403 (a rights-limited book) carries no DDoS-Guard signature
+  and is *not* retried.
+- **The app doesn't sweep sizes on every load.** Opening/reloading the app
+  resolves only sizes already cached; live per-book size fetches happen only
+  on an explicit Refresh. Pacing between live fetches is jittered so the
+  cadence doesn't look mechanically scripted.
+- **Keep your IP stable during a session.** `__ddg9_` encodes your public IP;
+  flipping a VPN mid-session changes it and can force a re-challenge.
+
 ### Running the MCP server
 
 ```bash
@@ -190,6 +222,10 @@ Everything else is optional too, with sensible defaults:
 | `LITRES_CACHE_FILE` | `.litres_cache.json` at the project root | Where the cached library listing/file listings are stored (see **Caching** below) |
 | `LITRES_LIBRARY_CACHE_TTL` | `900` (15 min) | How long the cached library listing stays fresh before a reload re-fetches it |
 | `LITRES_FILES_CACHE_TTL` | `604800` (7 days) | How long a book's cached file listing (size/formats) stays fresh |
+| `LITRES_MAX_RETRIES` | `3` | Retries on a transient anti-bot block (DDoS-Guard 403 / 429 / 503) before giving up on that request |
+| `LITRES_RETRY_BASE_DELAY` | `2.0` | First backoff (seconds) on a block, doubled each retry, capped by the next var |
+| `LITRES_RETRY_MAX_DELAY` | `30.0` | Cap on any single backoff (seconds) |
+| `LITRES_SIZE_CHECK_PACE` | `0.2` | Base gap (seconds, jittered up) between live per-book size fetches during a sweep |
 
 `.env` is gitignored and never committed. See **Security notes** below for
 where your credentials/session actually live.
