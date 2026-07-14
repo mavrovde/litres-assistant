@@ -14,7 +14,7 @@
 
 services:
   web:
-    image: ghcr.io/mavrovde/litres-assistant/web:latest
+    image: ghcr.io/mavrovde/bookvault/web:latest
     build:
       context: .
       dockerfile: Dockerfile.web
@@ -27,7 +27,7 @@ services:
     restart: unless-stopped
 
   mcp:
-    image: ghcr.io/mavrovde/litres-assistant/mcp:latest
+    image: ghcr.io/mavrovde/bookvault/mcp:latest
     build:
       context: .
       dockerfile: Dockerfile.mcp

@@ -1,9 +1,14 @@
-# litres-mcp
+# bookvault-mcp
 
 An MCP server that exposes your purchased litres.ru library to MCP clients
-(e.g. Claude Desktop) as tools. It reuses `litres-core` for login, session
+(e.g. Claude Desktop) as tools. It reuses `bookvault-core` for login, session
 management, and the Playwright-driven litres.ru client -- same session and
 OS-keychain credentials as the web app.
+
+> BookVault is an independent, unofficial project, not affiliated with or
+> endorsed by ООО «ЛитРес» (LLC "LitRes"). "LitRes"/"litres.ru" are trademarks
+> of their owner, used here only to describe compatibility. See
+> [`../TRADEMARKS.md`](../TRADEMARKS.md).
 
 ## Tools
 
@@ -14,7 +19,7 @@ OS-keychain credentials as the web app.
 
 ## Install
 
-From the repo root (the MCP server needs `litres-core` and a Chromium
+From the repo root (the MCP server needs `bookvault-core` and a Chromium
 build for Playwright):
 
 ```bash
@@ -26,7 +31,7 @@ python3 -m venv .venv
 ## Run
 
 ```bash
-.venv/bin/litres-mcp        # or: .venv/bin/python -m litres_mcp.server
+.venv/bin/bookvault-mcp        # or: .venv/bin/python -m bookvault_mcp.server
 ```
 
 By default it speaks the MCP **stdio** protocol, so you normally point a
@@ -35,9 +40,9 @@ client at it rather than running it by hand. Claude Desktop config:
 ```json
 {
   "mcpServers": {
-    "litres-assistant": {
-      "command": "/path/to/litres-assistant/.venv/bin/litres-mcp",
-      "cwd": "/path/to/litres-assistant"
+    "bookvault": {
+      "command": "/path/to/bookvault/.venv/bin/bookvault-mcp",
+      "cwd": "/path/to/bookvault"
     }
   }
 }
@@ -51,7 +56,7 @@ service instead of stdio (binds `LITRES_MCP_HOST:LITRES_MCP_PORT`, default
 stdin to attach. Clients then connect by URL:
 
 ```json
-{ "mcpServers": { "litres-assistant": { "url": "http://127.0.0.1:8421/mcp" } } }
+{ "mcpServers": { "bookvault": { "url": "http://127.0.0.1:8421/mcp" } } }
 ```
 
 See the repo root `README.md` ("Running in Docker") for the `docker compose`

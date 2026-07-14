@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.11.0] - Renamed to BookVault + trademark/non-affiliation notices
+
+Renamed the project from `litres-assistant` to **BookVault** so its identity no
+longer leads with a third-party trademark, and added clear non-affiliation
+notices. The project only *refers* to litres.ru (the service it backs up your
+own purchases from) -- it is not affiliated with LitRes.
+
+### Changed (breaking)
+- **Project renamed to `bookvault`.** Repo, Python distributions
+  (`bookvault-core` / `-web` / `-mcp`), importable modules (`bookvault_core` /
+  `bookvault_web` / `bookvault_mcp`), console commands (`bookvault-web`,
+  `bookvault-mcp`), and Docker images (`ghcr.io/mavrovde/bookvault/{web,mcp}`)
+  all use the new name. The OS-keychain service and MCP server id are now
+  `bookvault`.
+- **Kept as-is (nominative references to the litres.ru _service_):** the
+  `LITRES_*` environment variables, the `LitresClient` class and its errors,
+  litres.ru URLs, and the `.litres_session.json` / `.litres_cache.json` data
+  files. These describe what the tool connects to, which trademark law permits.
+
+### Added
+- **`TRADEMARKS.md`** and non-affiliation notices in the README, the MCP
+  README, and the LICENSE: "LitRes"/"ЛитРес"/"litres.ru" are trademarks of
+  ООО «ЛитРес»; BookVault is independent and unofficial, uses the name only
+  nominatively, and uses none of LitRes's logos/branding. Links to the
+  official LitRes sites are included.
+- The LICENSE now spells out that it covers this project's own code only and
+  grants no rights in any third-party trademark.
+
+### Migration
+- Reinstall the packages: `pip install -e ./core -e ./web -e ./mcp`.
+- Use the `bookvault-web` / `bookvault-mcp` commands (was `litres-web` /
+  `litres-mcp`). Pull the new images from `ghcr.io/mavrovde/bookvault/*`.
+- Your saved session/keychain login carries over only partially (the keychain
+  service id changed); if the web app shows logged-out, just log in once more.
+
 ## [0.10.1] - Multi-arch Docker images
 
 ### Fixed
@@ -17,7 +52,7 @@
 ## [0.10.0] - Docker images for the web app and MCP server
 
 Both entry points now ship as container images, published to the GitHub
-Container Registry on every release (`ghcr.io/mavrovde/litres-assistant/web`
+Container Registry on every release (`ghcr.io/mavrovde/bookvault/web`
 and `.../mcp`, tagged with the version + `latest`). A `docker compose up -d`
 starts and controls both.
 
@@ -179,16 +214,16 @@ personal tool it is, so it stops tripping those false-positive checks.
 ### Changed
 - Restructured the single `app/` package into three subprojects, each with
   its own `pyproject.toml` and runtime dependencies:
-  - `core/` (`litres-core`) -- the shared library: `client.py`,
+  - `core/` (`bookvault-core`) -- the shared library: `client.py`,
     `session.py`, `credentials.py`, `cache.py`.
-  - `web/` (`litres-web`) -- the web app: `app.py` (was `web.py`),
+  - `web/` (`bookvault-web`) -- the web app: `app.py` (was `web.py`),
     `activity.py`, `run.py`, `templates/`, `static/`. Entry point:
-    `litres-web`.
-  - `mcp/` (`litres-mcp`) -- the MCP server: `server.py` (was
-    `mcp_server.py`) + its own `README.md`. Entry point: `litres-mcp`.
+    `bookvault-web`.
+  - `mcp/` (`bookvault-mcp`) -- the MCP server: `server.py` (was
+    `mcp_server.py`) + its own `README.md`. Entry point: `bookvault-mcp`.
   Installing the web app no longer pulls in the MCP SDK, and installing the
   MCP server no longer pulls in FastAPI/uvicorn; both depend on
-  `litres-core`. Dev tooling and the pytest/ruff config live in a workspace
+  `bookvault-core`. Dev tooling and the pytest/ruff config live in a workspace
   root `pyproject.toml` (the flat `requirements*.txt` and `pytest.ini` are
   gone).
 - The web app no longer auto-logs-in from `.env` credentials. It restores a
@@ -201,7 +236,7 @@ personal tool it is, so it stops tripping those false-positive checks.
   environment-scoped `pip-audit`).
 - Session/cache files (`.litres_session.json`, `.litres_cache.json`) now
   default to the current working directory (repo root when launched via the
-  `litres-web`/`litres-mcp` commands from there); still overridable via
+  `bookvault-web`/`bookvault-mcp` commands from there); still overridable via
   `LITRES_SESSION_FILE`/`LITRES_CACHE_FILE`.
 
 ## [0.6.0] - Move the activity state machine to the backend

@@ -6,7 +6,7 @@ offline fakes.
 """
 from __future__ import annotations
 
-from litres_core.client import LitresAuthError, LitresClient
+from bookvault_core.client import LitresAuthError, LitresClient
 
 
 class FakeAPIResponse:

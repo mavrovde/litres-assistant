@@ -2,7 +2,7 @@
 Claude Desktop), reusing the same session/login logic as the web UI.
 
 Run standalone over stdio:
-    .venv/bin/litres-mcp        # or: python -m litres_mcp.server
+    .venv/bin/bookvault-mcp        # or: python -m bookvault_mcp.server
 
 Threading note: `session.restore_session`/`login`/`logout` already submit
 their work to session.py's single dedicated Playwright thread internally
@@ -25,14 +25,14 @@ import anyio
 from dotenv import load_dotenv
 from mcp.server.fastmcp import FastMCP
 
-from litres_core import session
-from litres_core.client import LitresAuthError
+from bookvault_core import session
+from bookvault_core.client import LitresAuthError
 
 load_dotenv()
 
 logger = logging.getLogger(__name__)
 
-mcp = FastMCP("litres-assistant")
+mcp = FastMCP("bookvault")
 
 DOWNLOAD_DIR = Path(os.environ.get("LITRES_DOWNLOAD_DIR", str(Path.home() / "Downloads" / "litres-library")))
 

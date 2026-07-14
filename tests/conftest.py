@@ -6,8 +6,8 @@ from __future__ import annotations
 
 import pytest
 
-from litres_core import cache, client, credentials, session
-from litres_web import activity
+from bookvault_core import cache, client, credentials, session
+from bookvault_web import activity
 from tests.fakes import FakeKeyring
 
 

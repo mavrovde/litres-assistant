@@ -27,4 +27,4 @@ RUN mkdir -p /data
 VOLUME ["/data"]
 EXPOSE 8421
 
-CMD ["litres-mcp"]
+CMD ["bookvault-mcp"]

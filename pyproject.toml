@@ -6,9 +6,9 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "litres-assistant-workspace"
-version = "0.10.1"
-description = "Dev/test tooling for the LitRes Assistant monorepo (core + web + mcp)."
+name = "bookvault-workspace"
+version = "0.11.0"
+description = "Dev/test tooling for the BookVault monorepo (core + web + mcp)."
 requires-python = ">=3.11"
 
 [project.optional-dependencies]
@@ -34,4 +34,4 @@ asyncio_mode = "auto"
 pythonpath = ["."]
 
 [tool.coverage.run]
-source = ["litres_core", "litres_web", "litres_mcp"]
+source = ["bookvault_core", "bookvault_web", "bookvault_mcp"]
