@@ -145,7 +145,13 @@ def client_factory(monkeypatch, session_module, **kwargs):
 
 
 class FakeKeyringErrors:
-    class PasswordDeleteError(Exception):
+    class KeyringError(Exception):
+        pass
+
+    class PasswordDeleteError(KeyringError):
+        pass
+
+    class NoKeyringError(RuntimeError):
         pass
 
 
@@ -167,3 +173,20 @@ class FakeKeyring:
         if (service, username) not in self._store:
             raise self.errors.PasswordDeleteError()
         del self._store[(service, username)]
+
+
+class NoBackendKeyring:
+    """A keyring stand-in with no usable backend: every operation raises
+    NoKeyringError, exactly like a headless container with no OS keychain.
+    Used to prove credentials.py degrades to session-only instead of crashing."""
+
+    errors = FakeKeyringErrors
+
+    def set_password(self, *args):
+        raise self.errors.NoKeyringError("No recommended backend was available")
+
+    def get_password(self, *args):
+        raise self.errors.NoKeyringError("No recommended backend was available")
+
+    def delete_password(self, *args):
+        raise self.errors.NoKeyringError("No recommended backend was available")

@@ -1,0 +1,30 @@
+# The MCP server: exposes your litres.ru library (list + download) as tools
+# for MCP clients. Same Playwright base as the web image -- the MCP server also
+# drives Chromium for login/session restore, so it needs the browser too.
+FROM mcr.microsoft.com/playwright/python:v1.61.0-noble
+
+WORKDIR /app
+
+COPY core/ ./core/
+COPY mcp/ ./mcp/
+RUN pip install --no-cache-dir ./core ./mcp
+
+# In a container there's no stdin to attach, so run a network transport
+# (streamable-http) instead of stdio: a long-lived service Compose can
+# start/stop, reachable by an MCP client at http://host:8421/mcp. Bind
+# 0.0.0.0 inside the container; the host publishes to 127.0.0.1 (see compose).
+# The /data volume is shared with the web image, so a login there is reused
+# here (shared session cookies). Downloads land under /data/downloads.
+ENV LITRES_MCP_TRANSPORT=streamable-http \
+    LITRES_MCP_HOST=0.0.0.0 \
+    LITRES_MCP_PORT=8421 \
+    LITRES_LOG_LEVEL=INFO \
+    LITRES_SESSION_FILE=/data/.litres_session.json \
+    LITRES_CACHE_FILE=/data/.litres_cache.json \
+    LITRES_DOWNLOAD_DIR=/data/downloads
+
+RUN mkdir -p /data
+VOLUME ["/data"]
+EXPOSE 8421
+
+CMD ["litres-mcp"]

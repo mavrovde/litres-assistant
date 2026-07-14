@@ -1,171 +1,130 @@
-# litres-assistant
+<h1 align="center">📚 litres-assistant</h1>
 
-A small, local-only tool to back up **your own purchased litres.ru library**
-(books and audiobooks). Browse your library, pick exactly which titles you
-want (with cover thumbnails, authors, and file sizes), choose your preferred
-format, and download them as a zip -- with live progress and a stop button.
-Runs entirely on your own machine -- your login/password never go anywhere
-except litres.ru itself.
+<p align="center">
+  <strong>Back up your own purchased litres.ru library — books &amp; audiobooks — entirely from your own machine.</strong><br>
+  Browse what you own, pick the titles and format you want, and download them as a zip — with live progress and a stop button.
+</p>
 
-It comes in two forms that share the same login/session logic:
+<p align="center">
+  <a href="https://github.com/mavrovde/litres-assistant/actions/workflows/lint-test-audit.yml"><img alt="CI" src="https://github.com/mavrovde/litres-assistant/actions/workflows/lint-test-audit.yml/badge.svg"></a>
+  <a href="https://github.com/mavrovde/litres-assistant/actions/workflows/docker-publish.yml"><img alt="Docker images" src="https://github.com/mavrovde/litres-assistant/actions/workflows/docker-publish.yml/badge.svg"></a>
+  <a href="https://www.python.org/"><img alt="Python 3.11+" src="https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white"></a>
+  <a href="https://github.com/mavrovde/litres-assistant/releases"><img alt="Latest release" src="https://img.shields.io/github/v/release/mavrovde/litres-assistant?sort=semver"></a>
+  <a href="#-security--privacy"><img alt="Runs 100% local" src="https://img.shields.io/badge/runs-100%25%20local-brightgreen"></a>
+  <a href="LICENSE"><img alt="License: MIT with attribution" src="https://img.shields.io/badge/license-MIT%20(attribution)-yellow.svg"></a>
+</p>
 
-- **A local web app** -- browse your library, select books, pick a format,
-  and download, with live progress.
-- **An MCP server** -- so Claude (or any other MCP client) can list your
-  library and download individual books as tools.
+> [!IMPORTANT]
+> **Your own books only — no rights are broken.** This tool logs in with **your own** litres.ru account and
+> can download **only the titles you have legally purchased** — nothing else is reachable. It makes personal
+> backup copies of content you already own (format-shifting), using your own authenticated session and the
+> site's own download endpoints. It does **not** crack DRM, bypass payment, or grant access to anything you
+> haven't bought. Keep your downloads for personal use and don't redistribute them. See [Legal &amp; fair use](#-legal--fair-use).
 
----
+It comes in two flavours that share the same login/session code:
 
-## Quick start (non-technical)
-
-1. Install [Python 3.11+](https://www.python.org/downloads/) if you don't
-   have it already.
-2. Open a terminal in this folder and run:
-   ```
-   python3 -m venv .venv
-   .venv/bin/pip install -e ./core -e ./web
-   .venv/bin/playwright install chromium
-   ```
-3. Start it:
-   ```
-   .venv/bin/litres-web
-   ```
-4. Open **http://127.0.0.1:8420** in your browser, log in with your
-   litres.ru account, select the books you want, and click "Download."
-
-Your password is remembered securely in your OS keychain, so you won't need
-to log in again next time.
+- 🖥️ **A local web app** — browse your library, tick the books you want, choose a format, and download.
+- 🔌 **An MCP server** — so Claude (or any MCP client) can list your library and download titles as tools.
 
 ---
 
-## Quick start (developer)
+## Contents
+
+- [Features](#-features)
+- [Quick start](#-quick-start)
+- [Using the web app](#-using-the-web-app)
+- [Using it from Claude (MCP)](#-using-it-from-claude-mcp)
+- [Running in Docker](#-running-in-docker)
+- [Configuration](#-configuration)
+- [How it works](#-how-it-works)
+- [Development &amp; tests](#-development--tests)
+- [Legal &amp; fair use](#-legal--fair-use)
+- [Security &amp; privacy](#-security--privacy)
+- [Known limitations](#-known-limitations)
+- [License](#-license)
+
+---
+
+## ✨ Features
+
+- **📖 Books &amp; 🎧 audiobooks** — pick exactly which titles to back up, with cover thumbnails, authors, and file sizes.
+- **🎯 Format of your choice** — set a preferred ebook format (epub, fb2, pdf, …) and audiobook format, with sensible fallbacks per title.
+- **📦 One tidy zip** — ebooks as single files, each audiobook as a folder of its tracks; packed so macOS Archive Utility opens it cleanly.
+- **⏳ Live progress + Stop** — a byte-level progress bar (`12.3 / 45.0 MB`) and a Stop button that interrupts even a mid-transfer download.
+- **🛡️ Anti-bot resilient** — matches the browser's TLS fingerprint on downloads and retries transient DDoS-Guard blocks automatically (details [below](#-how-it-works)).
+- **⚡ Smart caching** — your library and file listings are cached on disk, so reloads and restarts stay fast and gentle on litres.ru.
+- **🔒 Local &amp; private** — your password lives in your OS keychain (or nowhere, in Docker); nothing is sent anywhere but litres.ru.
+- **🐳 Docker-ready** — two published images and a one-command `docker compose up`.
+
+---
+
+## 🚀 Quick start
+
+Pick whichever fits you. Both end with the app at **http://127.0.0.1:8420**.
+
+### Option A — Docker (easiest, nothing to install but Docker)
+
+```bash
+git clone https://github.com/mavrovde/litres-assistant.git
+cd litres-assistant
+docker compose up -d
+```
+
+Open **http://127.0.0.1:8420**, log in with your litres.ru account, and you're set.
+Full details in [Running in Docker](#-running-in-docker).
+
+### Option B — Run it locally (Python 3.11+)
 
 ```bash
 git clone https://github.com/mavrovde/litres-assistant.git
 cd litres-assistant
 python3 -m venv .venv
-# editable installs of the subprojects + shared dev tooling (pytest, ruff)
-.venv/bin/pip install -e ./core -e ./web -e ./mcp -e ".[dev]"
-.venv/bin/playwright install chromium
-
-cp .env.example .env   # optional -- credentials here are for the MCP server only
+.venv/bin/pip install -e ./core -e ./web        # the web app + its shared core
+.venv/bin/playwright install chromium           # one-time browser download
 .venv/bin/litres-web
 ```
 
-The app binds to `127.0.0.1` only (see `web/litres_web/run.py`) -- it's a
-personal, single-user tool, not a multi-user service.
+Then open **http://127.0.0.1:8420** and log in. Your password is remembered in your OS keychain, so you won't have to log in again next time.
 
-### Project layout
+> 💡 Don't have Python? Grab it from [python.org](https://www.python.org/downloads/). On macOS/Linux it's often already installed.
 
-```
-core/                   litres-core -- shared library (own pyproject.toml)
-  litres_core/
-    client.py     LitresClient -- Playwright-driven login + library/file/download calls
-    session.py    login/session-restore logic + the single dedicated Playwright thread
-    credentials.py  password storage via the OS keychain (the `keyring` package)
-    cache.py      disk-backed cache for the library listing and per-book file listings
-web/                    litres-web -- the web app (depends on litres-core)
-  litres_web/
-    app.py        FastAPI app: library browser, format defaults, activity control + status
-    activity.py   the one backend state machine: refresh / size-sweep / zip-build / cancel
-    run.py        starts uvicorn; installed as the `litres-web` command
-    templates/    the web app's HTML; static/ its CSS + JS (no build step, no framework)
-mcp/                    litres-mcp -- the MCP server (depends on litres-core)
-  litres_mcp/server.py  MCP tools; installed as the `litres-mcp` command
-  README.md       MCP-specific setup (Claude Desktop config, env vars)
-pyproject.toml          workspace root: shared dev tooling + pytest/ruff config
-tests/                  pytest suite -- fully mocked, no real Playwright/network involved
-```
+---
 
-Each subproject has its own `pyproject.toml` and runtime dependencies:
-installing `litres-web` doesn't pull in the MCP SDK, and installing
-`litres-mcp` doesn't pull in FastAPI/uvicorn. Both depend on `litres-core`.
+## 🖥️ Using the web app
 
-### One state machine, on the backend
+1. **Log in** once with your litres.ru email and password.
+2. **Browse &amp; filter** your library — search by title/author, filter books vs. audiobooks, sort by title/author/size.
+3. **Select** the titles you want (nothing is pre-selected, so you never start a huge download by accident).
+4. **Pick a format** (optional) — your preferred ebook and audiobook formats, used when available.
+5. **Prepare zip** — watch the live progress bar; hit **Stop** anytime.
+6. **Download** the zip when it's ready.
 
-Everything the app can be *doing* -- reloading the library list, sweeping
-book sizes, building the download zip, or being cancelled -- is one backend
-state machine in `activity.py`, with states `idle -> refreshing / checking
-/ preparing / stopping -> idle` and a terminal `result` (`done` /
-`cancelled` / `error`). Only one activity runs at a time, which falls
-naturally out of the single dedicated Playwright thread (see `session.py`):
-there's only ever one worker, so there's only ever one thing to be doing.
+> **Opening the zip:** double-click it (Finder / Archive Utility) or any modern tool.
+> ⚠️ macOS's built-in Terminal `unzip` garbles Cyrillic filenames — extract via Finder, or run
+> `ditto -x -k litres-library.zip dest/` for correct names.
 
-The browser is a thin renderer. It POSTs an action (`/activity/refresh`,
-`/activity/prepare`, `/activity/cancel`), then polls `GET /activity` and
-paints whatever state it reports -- every button's enabled/label state is a
-pure function of that state. The frontend owns no activity logic, no pacing,
-and no size-fetch loop of its own; those all live in `activity.py`.
+---
 
-While a zip build runs, the snapshot also carries live per-file download
-progress -- `current_downloaded`/`current_total` bytes, fed by
-`download_file`'s `on_progress` callback as it streams each chunk. The
-progress bar fills by *bytes*, not just whole books, so a single-book
-download (or the last book of any batch) visibly advances mid-file instead
-of jumping only when a whole book finishes, and the card shows a live
-`12.3 / 45.0 MB` readout for the file currently downloading.
+## 🔌 Using it from Claude (MCP)
 
-### Why Playwright instead of plain HTTP requests?
+The MCP server exposes your library to any MCP client (e.g. Claude Desktop) as tools:
 
-litres.ru's login endpoint (`api.litres.ru/foundation/api/auth/login`)
-rejects plain scripted `POST` requests with a generic "incorrect
-credentials" error regardless of whether the password is right -- the site
-sets DataDome-style anti-bot cookies (`__ddg9_`, `__ddg1_`) that only a
-real, JS-executing browser can obtain. So `LitresClient` drives an actual
-headless Chromium browser (via Playwright) through the real login form.
+| Tool | What it does |
+|---|---|
+| `login_status()` | Whether there's an active session |
+| `login_to_litres(login, password)` | Log in and persist the session |
+| `list_library(limit)` | List your purchased titles |
+| `download_book(art_id)` | Download one title to `LITRES_DOWNLOAD_DIR` |
 
-Being logged in isn't sufficient either: the API also requires several
-app-level headers (`app-id`, `session-id`, `client-host`, `ui-currency`,
-...) that the site's own frontend code attaches to every call. Rather than
-guessing/hardcoding them, `LitresClient` captures them once from a request
-the site's own JS fires automatically right after login, and replays them
-on subsequent calls.
-
-Playwright's sync API is also tied to whichever single thread created it,
-so `session.py` funnels every call that touches a `LitresClient` (library
-listing, file lookups, downloads) through one dedicated worker thread --
-see that module's docstring for the details.
-
-### Staying under DDoS-Guard's radar
-
-litres.ru sits behind DDoS-Guard, which decides "bot or human" from more
-than cookies: it fingerprints the **TLS handshake (JA3/JA4)** and the HTTP
-request shape, and watches request *cadence* and IP. Since this is a
-personal, low-volume backup tool -- not a scraper -- the goal is simply to
-not trip those false-positive checks. Several things work together:
-
-- **Downloads carry the same TLS fingerprint as the browser.** API calls run
-  inside Chromium (via Playwright), but file downloads must *stream* to disk
-  (audiobook bundles reach ~2GB), and Playwright's request client only offers
-  a full-body read. So downloads go over a separate HTTP client -- and a
-  plain-Python one has a Python/OpenSSL TLS fingerprint that, even with valid
-  `__ddg*` cookies, can be re-challenged. `download_file` therefore uses
-  [`curl_cffi`](https://github.com/lexiforest/curl_cffi) impersonating Chrome,
-  so the download's JA3/JA4 matches the session that solved the challenge. (If
-  `curl_cffi` isn't importable, it falls back to plain `httpx` -- still works,
-  just a less browser-like fingerprint.)
-- **Transient blocks are retried, not hammered past.** On a DDoS-Guard 403 /
-  429 / 503 the client honors any `Retry-After`, backs off with jittered
-  exponential delay, re-warms the `__ddg*` cookies via a quick page visit, and
-  retries -- instead of failing the item and immediately hitting the next one,
-  which is exactly the pattern that escalates a soft block into a hard one. A
-  genuine litres 403 (a rights-limited book) carries no DDoS-Guard signature
-  and is *not* retried.
-- **The app doesn't sweep sizes on every load.** Opening/reloading the app
-  resolves only sizes already cached; live per-book size fetches happen only
-  on an explicit Refresh. Pacing between live fetches is jittered so the
-  cadence doesn't look mechanically scripted.
-- **Keep your IP stable during a session.** `__ddg9_` encodes your public IP;
-  flipping a VPN mid-session changes it and can force a re-challenge.
-
-### Running the MCP server
+**Install &amp; run (stdio):**
 
 ```bash
-.venv/bin/litres-mcp        # or: .venv/bin/python -m litres_mcp.server
+.venv/bin/pip install -e ./core -e ./mcp
+.venv/bin/playwright install chromium
+.venv/bin/litres-mcp        # or: python -m litres_mcp.server
 ```
 
-It communicates over stdio, so normally you don't run it directly --
-instead point an MCP client at it. For example, in Claude Desktop's config:
+It speaks the MCP **stdio** protocol, so you point a client at it rather than running it by hand. Claude Desktop config:
 
 ```json
 {
@@ -178,108 +137,215 @@ instead point an MCP client at it. For example, in Claude Desktop's config:
 }
 ```
 
-Available tools: `login_status`, `login_to_litres(login, password)`,
-`list_library(limit)`, `download_book(art_id)`. Downloaded books are saved
-to the directory configured by `LITRES_DOWNLOAD_DIR` (see **Configuration**).
-See `mcp/README.md` for MCP-specific setup and configuration.
-
-This repo also ships a separate, unrelated `.mcp.json` at its root: a
-**GitHub** MCP server config (using the hosted `api.githubcopilot.com/mcp/`
-endpoint, authenticated by shelling out to `gh auth token` at connection
-time -- no token is ever stored in the file) so that Claude Code contributors
-working on *this repo* can watch CI runs and open pull requests through MCP
-tools. It has nothing to do with litres.ru; requires the `gh` CLI installed
-and authenticated locally.
+Prefer to run it in a container (over HTTP)? See [Pointing an MCP client at the container](#pointing-an-mcp-client-at-the-container). More detail lives in [`mcp/README.md`](mcp/README.md).
 
 ---
 
-## Configuration
+## 🐳 Running in Docker
 
-Copy `.env.example` to `.env` and fill in your litres.ru credentials:
+Two images are published to the GitHub Container Registry on **every release** — one for the web app, one for the MCP server — both built on the official Playwright image (Chromium included):
 
+| Image | Purpose |
+|---|---|
+| `ghcr.io/mavrovde/litres-assistant/web` | The web app |
+| `ghcr.io/mavrovde/litres-assistant/mcp` | The MCP server |
+
+Each release tag (`v0.10.0`, …) publishes images tagged with that version, plus `latest`.
+
+### Compose — run &amp; control both
+
+```bash
+docker compose up -d            # start web + mcp (pulls the ghcr images)
+# or build locally:  docker compose up -d --build
 ```
-LITRES_LOGIN=you@example.com
-LITRES_PASSWORD=your-litres-password
+
+<sub>(Older Docker installs use the hyphenated <code>docker-compose</code> command — same thing.)</sub>
+
+Open **http://127.0.0.1:8420** and log in. Everyday controls:
+
+```bash
+docker compose logs -f web      # follow the web app's logs
+docker compose stop mcp         # stop just the MCP server
+docker compose down             # stop both (the named volume persists)
 ```
 
-These credentials are used by the **MCP server only**. The MCP server is
-headless (no login form), so it bootstraps a first session from them. The
-**web app never uses them** -- you log in through its login page, and the
-session is saved (browser cookies + your OS keychain) and reused on every
-later run; if the saved session lapses, it silently re-logs-in from the
-keychain. So for web-app-only use you can leave `.env` credentials unset.
+Both services share one named volume (`litres-data` at `/data`), so **logging in through the web app also authenticates the MCP server** — they read the same saved session. Your library cache and downloads persist there across restarts.
 
-Everything else is optional too, with sensible defaults:
+### 🔒 Localhost-only, on purpose
+
+The containers bind `0.0.0.0` internally, but Compose publishes their ports to **`127.0.0.1` only** — so nothing beyond your own machine can reach them. This preserves the app's single-user, localhost-only design. **Don't change those port bindings to expose it.**
+
+### 🔑 Credentials in a container
+
+There's no OS keychain in a headless container, so the password is **not stored** — `keyring` gracefully degrades to session-only. The saved browser session (cookies, on the `/data` volume) keeps you logged in across restarts for weeks; when it finally lapses you just log in again through the web form. Nothing sensitive is written to the image or the volume.
+
+<details>
+<summary>Prefer the MCP server to bootstrap headlessly from credentials</summary>
+
+Set `LITRES_LOGIN` / `LITRES_PASSWORD` (e.g. in a local `.env` that Compose reads). The shared-session route above needs no stored password at all, so this is optional.
+</details>
+
+### Pointing an MCP client at the container
+
+The containerized MCP server speaks **streamable-http** (not stdio), so point a client at its URL:
+
+```json
+{ "mcpServers": { "litres-assistant": { "url": "http://127.0.0.1:8421/mcp" } } }
+```
+
+<sub>For a non-Docker setup the server still defaults to stdio (see <a href="#-using-it-from-claude-mcp">above</a>). <code>docker run -i …/mcp</code> with <code>LITRES_MCP_TRANSPORT=stdio</code> also works.</sub>
+
+---
+
+## ⚙️ Configuration
+
+Copy `.env.example` to `.env` to override any defaults. **All of it is optional** — the app works out of the box.
+
+```bash
+cp .env.example .env
+```
+
+Credentials in `.env` are used by the **MCP server only** (it's headless and bootstraps a first session from them). The **web app never reads them** — you log in through its page, and the session is saved and reused.
+
+<details>
+<summary><strong>All environment variables</strong> (click to expand)</summary>
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `LITRES_APP_PORT` | `8420` | Web UI port (host is always `127.0.0.1`, not configurable, by design) |
-| `LITRES_DOWNLOAD_DIR` | `~/Downloads/litres-library` | Where the MCP server's `download_book` tool saves files |
-| `LITRES_SESSION_FILE` | `.litres_session.json` at the project root | Where the browser session (cookies) is cached between runs |
-| `LITRES_DOWNLOAD_TIMEOUT_MS` | `300000` (5 min) | Per-file download timeout. Whole-audiobook bundles can be ~2GB |
-| `LITRES_HEADLESS` | `1` | Set to `0` to watch the login flow in a real Chromium window (debugging) |
-| `LITRES_LOG_LEVEL` | `INFO` | Verbosity of the app's own log lines (login, library listing, download progress) -- one of `DEBUG`/`INFO`/`WARNING`/`ERROR` |
-| `LITRES_CACHE_FILE` | `.litres_cache.json` at the project root | Where the cached library listing/file listings are stored (see **Caching** below) |
-| `LITRES_LIBRARY_CACHE_TTL` | `900` (15 min) | How long the cached library listing stays fresh before a reload re-fetches it |
-| `LITRES_FILES_CACHE_TTL` | `604800` (7 days) | How long a book's cached file listing (size/formats) stays fresh |
-| `LITRES_MAX_RETRIES` | `3` | Retries on a transient anti-bot block (DDoS-Guard 403 / 429 / 503) before giving up on that request |
-| `LITRES_RETRY_BASE_DELAY` | `2.0` | First backoff (seconds) on a block, doubled each retry, capped by the next var |
+| `LITRES_LOGIN` / `LITRES_PASSWORD` | — | Credentials to bootstrap a session (**MCP server only**) |
+| `LITRES_APP_PORT` | `8420` | Web UI port |
+| `LITRES_APP_HOST` | `127.0.0.1` | Web bind host. Leave as-is locally; the Docker image sets `0.0.0.0` and publishes to `127.0.0.1` on the host. **Don't set `0.0.0.0` outside a container** |
+| `LITRES_RELOAD` | `1` | Auto-reload the web server on code changes (dev). The Docker image sets `0` |
+| `LITRES_MCP_TRANSPORT` | `stdio` | MCP transport: `stdio` (client-launched) or `streamable-http` (the container's networked service) |
+| `LITRES_MCP_HOST` / `LITRES_MCP_PORT` | `127.0.0.1` / `8421` | Bind host/port for the MCP `streamable-http` transport |
+| `LITRES_DOWNLOAD_DIR` | `~/Downloads/litres-library` | Where the MCP server's `download_book` saves files |
+| `LITRES_SESSION_FILE` | `.litres_session.json` | Where the browser session (cookies) is cached between runs |
+| `LITRES_CACHE_FILE` | `.litres_cache.json` | Where the library/file-listing cache is stored |
+| `LITRES_LIBRARY_CACHE_TTL` | `900` (15 min) | How long the cached library listing stays fresh |
+| `LITRES_FILES_CACHE_TTL` | `604800` (7 days) | How long a book's cached file listing stays fresh |
+| `LITRES_DOWNLOAD_TIMEOUT_MS` | `300000` (5 min) | Per-file download timeout (audiobook bundles can be ~2GB) |
+| `LITRES_HEADLESS` | `1` | Set `0` to watch the login flow in a real Chromium window (debugging) |
+| `LITRES_LOG_LEVEL` | `INFO` | Log verbosity: `DEBUG` / `INFO` / `WARNING` / `ERROR` |
+| `LITRES_MAX_RETRIES` | `3` | Retries on a transient anti-bot block (403 / 429 / 503) before giving up |
+| `LITRES_RETRY_BASE_DELAY` | `2.0` | First backoff (seconds) on a block, doubled each retry |
 | `LITRES_RETRY_MAX_DELAY` | `30.0` | Cap on any single backoff (seconds) |
-| `LITRES_SIZE_CHECK_PACE` | `0.2` | Base gap (seconds, jittered up) between live per-book size fetches during a sweep |
+| `LITRES_SIZE_CHECK_PACE` | `0.2` | Base gap (seconds, jittered up) between live per-book size fetches |
 
-`.env` is gitignored and never committed. See **Security notes** below for
-where your credentials/session actually live.
+</details>
+
+`.env` is gitignored and never committed — see [Security &amp; privacy](#-security--privacy) for where your credentials actually live.
 
 ---
 
-## Running the tests
+## 🧠 How it works
+
+A quick tour of the design choices that make this reliable. Skip it if you just want to use the app — expand a section if you're curious.
+
+**One state machine, on the backend.** Everything the app can be *doing* — reloading the library, sweeping sizes, building the zip, cancelling — is a single state machine in `activity.py` (`idle → refreshing / checking / preparing / stopping → idle`). Only one activity runs at a time, which falls out naturally from a single dedicated Playwright worker thread. The browser is a thin renderer: it POSTs an action, polls `GET /activity`, and paints whatever state it reports.
+
+<details>
+<summary>🎭 Why Playwright instead of plain HTTP requests</summary>
+
+<br>
+
+litres.ru's login endpoint rejects plain scripted `POST`s with a generic "incorrect credentials" error regardless of the password — the site sets DataDome-style anti-bot cookies (`__ddg9_`, `__ddg1_`) that only a real, JS-executing browser can obtain. So `LitresClient` drives an actual headless Chromium through the real login form.
+
+Being logged in isn't enough either: the API needs several app-level headers (`app-id`, `session-id`, `client-host`, …) that the site's own frontend attaches to every call. Rather than guessing them, the client captures them once from a request the site's own JS fires right after login, and replays them.
+
+Playwright's sync API is tied to whichever thread created it, so `session.py` funnels every call touching a `LitresClient` through one dedicated worker thread.
+</details>
+
+<details>
+<summary>🛡️ Staying under DDoS-Guard's radar</summary>
+
+<br>
+
+litres.ru sits behind DDoS-Guard, which decides "bot or human" from more than cookies: it fingerprints the **TLS handshake (JA3/JA4)** and the HTTP request shape, and watches request *cadence* and IP. As a low-volume personal tool, the goal is simply to not trip those false-positive checks:
+
+- **Downloads carry the same TLS fingerprint as the browser.** API calls run inside Chromium, but downloads must *stream* to disk (audiobook bundles reach ~2GB) over a separate HTTP client. A plain-Python client's TLS fingerprint can be re-challenged even with valid cookies, so `download_file` uses [`curl_cffi`](https://github.com/lexiforest/curl_cffi) impersonating Chrome — its JA3/JA4 matches the session that solved the challenge. (Falls back to `httpx` if `curl_cffi` isn't available.)
+- **Transient blocks are retried, not hammered past.** On a 403 / 429 / 503 the client honours `Retry-After`, backs off with jittered exponential delay, re-warms the `__ddg*` cookies via a quick page visit, and retries — instead of failing and immediately hitting the next request. A genuine rights-limited 403 carries no DDoS-Guard signature and isn't retried; instead the client automatically tries the subscription download endpoint.
+- **No bulk sweeps on load.** Opening the app resolves only cached sizes; live per-book fetches happen on an explicit Refresh, with jittered pacing.
+- **Keep your IP stable.** `__ddg9_` encodes your public IP; flipping a VPN mid-session can force a re-challenge.
+</details>
+
+<details>
+<summary>📦 Project layout</summary>
+
+<br>
+
+```text
+core/                 litres-core — shared library (own pyproject.toml)
+  litres_core/
+    client.py         Playwright-driven login + library/file/download calls
+    session.py        login/session-restore + the single dedicated Playwright thread
+    credentials.py    password storage via the OS keychain (keyring)
+    cache.py          disk cache for library + per-book file listings
+web/                  litres-web — the web app (depends on litres-core)
+  litres_web/
+    app.py            FastAPI: library browser, format defaults, activity control
+    activity.py       the one backend state machine
+    run.py            starts uvicorn; the `litres-web` command
+    templates/ static/  HTML + CSS + JS (no build step, no framework)
+mcp/                  litres-mcp — the MCP server (depends on litres-core)
+  litres_mcp/server.py  MCP tools; the `litres-mcp` command
+tests/                pytest suite — fully mocked, no real Playwright/network
+Dockerfile.web        web-app image (Playwright base)
+Dockerfile.mcp        MCP-server image
+docker-compose.yml    runs + controls both together
+```
+
+Each subproject has its own `pyproject.toml` and dependencies: installing `litres-web` doesn't pull in the MCP SDK, and vice-versa. Both depend on `litres-core`.
+</details>
+
+---
+
+## 🧪 Development &amp; tests
 
 ```bash
+# editable installs of all three subprojects + dev tooling (pytest, ruff)
 .venv/bin/pip install -e ./core -e ./web -e ./mcp -e ".[dev]"
 .venv/bin/python -m pytest
 ```
 
-The whole suite runs offline in under a second: `LitresClient` is either
-bypassed entirely (pure logic like format-picking) or replaced with a fake
-that mimics its interface (see `tests/fakes.py`) -- no real Playwright
-browser or network call happens during tests. The GitHub Actions workflow
-`.github/workflows/lint-test-audit.yml` runs ruff, the test matrix, and a
-dependency-vulnerability audit on every push/PR.
+The whole suite runs **offline in under a couple of seconds**: `LitresClient` is either bypassed (pure logic) or replaced with a fake (`tests/fakes.py`) — no real browser or network call happens. CI (`.github/workflows/lint-test-audit.yml`) runs ruff, the test matrix (Python 3.11–3.13), and a dependency-vulnerability audit on every push/PR.
 
 ---
 
-## Security notes
+## ⚖️ Legal &amp; fair use
 
-- Your password is stored in your OS keychain (via the `keyring` package),
-  never in a plaintext file.
-- Your browser session (cookies) is cached in a local JSON file (see
-  `LITRES_SESSION_FILE` above), so you don't have to log in on every run.
-  This file is gitignored -- **do not commit or share it**, it's equivalent
-  to being logged into your account.
-- `.env`, `.venv/`, and the session file are all gitignored.
-- Both the web app and the MCP server are single-user and local-only by
-  design. There is no multi-user support, and none is planned -- see the
-  architecture notes above for why (this is intentionally *not* built to
-  hold other people's credentials).
+This tool is for making **personal backups of books you have fairly bought** on litres.ru — and nothing more.
+
+- ✅ **Only your own purchases.** It authenticates with *your* litres.ru account and can only reach titles *you* have legally bought. It cannot access, list, or download anyone else's library or any book you haven't purchased.
+- ✅ **Personal backup / format-shifting.** It saves copies of content you already own so you can keep and read them on your own devices.
+- ✅ **The site's own endpoints, your own session.** It uses litres.ru's normal download endpoints through your logged-in session — the same files the site would give you.
+- 🚫 **No DRM circumvention, no piracy.** It does not crack DRM, bypass payment, or unlock anything you haven't bought.
+- 🚫 **Don't redistribute.** The books remain the property of their rights holders — keep your downloads private and for personal use only.
+
+You are responsible for using this tool in line with litres.ru's Terms of Service and the copyright law that applies to you. If in doubt, don't. The author provides this software as-is and accepts no liability for misuse (see [License](#-license)).
 
 ---
 
-## Known limitations
+## 🔒 Security &amp; privacy
+
+- 🔑 Your password is stored in your **OS keychain** (`keyring`), never in a plaintext file — and in Docker it isn't stored at all (session-only).
+- 🍪 Your browser **session cookies** are cached in a local JSON file so you don't re-login every run. It's gitignored — **treat it like being logged in; don't share it.**
+- 🚫 `.env`, `.venv/`, and the session/cache files are all gitignored.
+- 🏠 Both entry points are **single-user and local-only by design** — bound to `127.0.0.1` (or published only to it in Docker). There's no multi-user support, and none is planned: this is intentionally *not* built to hold other people's credentials.
+
+Found a security issue? See [`SECURITY.md`](SECURITY.md).
+
+---
+
+## ⚠️ Known limitations
 
 Tracked as [GitHub issues](https://github.com/mavrovde/litres-assistant/issues):
 
-- Cancelling stops the queue between books and also interrupts the file
-  currently downloading (the transfer is polled between streamed chunks and
-  the partial file is discarded), so Stop takes effect within a fraction of
-  a second. A transfer that stalls without sending any bytes still has to
-  hit its own timeout before it can be interrupted.
-- Response-shape assumptions for the library/file-listing endpoints were
-  confirmed against a limited sample of real library items; edge cases in
-  large/varied libraries (podcasts, webtoons, DRM-restricted items) may need
-  follow-up fixes.
-- The download is a standard `.zip` -- just double-click it (Finder /
-  Archive Utility) or use any modern tool. Ebooks are single files; each
-  audiobook is a folder of its tracks. One caveat: macOS's built-in Terminal
-  `unzip` ignores the archive's UTF-8 flag and garbles non-Latin (e.g.
-  Cyrillic) filenames -- extract via Finder, or use
-  `ditto -x -k litres-library.zip dest/`, to get the correct names.
+- **Stop is near-instant** — cancelling interrupts the file currently downloading (polled between streamed chunks; the partial file is discarded). A transfer that stalls without sending any bytes still has to hit its timeout first.
+- **Edge cases** — response-shape assumptions for the library/file endpoints were confirmed against a limited sample of real items; unusual libraries (podcasts, webtoons, DRM-restricted items) may need follow-up fixes.
+- **Zip filenames on macOS Terminal** — the built-in `unzip` garbles non-Latin (e.g. Cyrillic) names. Extract via Finder or `ditto -x -k litres-library.zip dest/`.
+
+---
+
+## 📄 License
+
+Free and open source under the **[MIT License, with attribution](LICENSE)**. Use it, modify it, and share it freely — the only ask is that any distribution or derivative work **visibly credits the original author (Sergii Mavrov) and links back to this repository**. It comes with no warranty.

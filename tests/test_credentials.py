@@ -4,6 +4,7 @@ touched by this suite)."""
 from __future__ import annotations
 
 from litres_core import credentials
+from tests.fakes import NoBackendKeyring
 
 
 def test_save_then_load_last_roundtrips():
@@ -36,3 +37,13 @@ def test_forget_removes_saved_login_and_pointer():
 
 def test_forget_when_nothing_saved_does_not_raise():
     credentials.forget("nobody@example.com")  # must not raise
+
+
+def test_no_keyring_backend_degrades_to_session_only(monkeypatch):
+    # A headless container has no OS keychain: keyring raises NoKeyringError.
+    # save/load_last/forget must degrade gracefully (no crash), so the web
+    # login flow still works -- it just doesn't persist the password.
+    monkeypatch.setattr(credentials, "keyring", NoBackendKeyring())
+    credentials.save("user@example.com", "hunter2")  # must not raise
+    assert credentials.load_last() is None  # nothing persisted, but no crash
+    credentials.forget("user@example.com")  # must not raise
