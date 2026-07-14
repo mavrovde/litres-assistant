@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.11.1] - Faster release builds (cached Docker layers)
+
+### Changed
+- The Docker publish workflow now uses a **registry-backed build cache** (a
+  per-image `buildcache` tag in GHCR) instead of the GitHub Actions cache.
+  That cache only runs on tags and is scoped per git ref, so every release
+  rebuilt from scratch -- re-pulling the ~2.5GB Playwright base and re-running
+  `pip install` for both amd64 and arm64. The registry cache is ref-agnostic,
+  so releases reuse unchanged layers and build far faster. CI-only change.
+
 ## [0.11.0] - Renamed to BookVault + trademark/non-affiliation notices
 
 Renamed the project from `litres-assistant` to **BookVault** so its identity no
