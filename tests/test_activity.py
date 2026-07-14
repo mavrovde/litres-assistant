@@ -9,8 +9,10 @@ worker bodies directly -- that also exercises the real threading path.
 """
 from __future__ import annotations
 
+import pathlib
 import threading
 import time
+import zipfile
 
 from litres_core import cache
 from litres_web import activity
@@ -246,6 +248,36 @@ def test_prepare_populates_the_cache_after_a_live_file_fetch():
     activity.prepare(client)
     wait_until_idle()
     assert cache.get_files(1) == TEXT_FILES
+
+
+def test_prepare_zip_deflates_so_nested_archive_signatures_do_not_break_extractors():
+    """Regression: the zip members are epubs / zip_with_mp3 audiobooks --
+    themselves zip files. Built with ZIP_STORED, each member's raw
+    end-of-central-directory marker (PK\\x05\\x06) landed verbatim in the outer
+    archive, so a scanning parser (macOS Archive Utility) saw several EOCD
+    markers and rejected the whole file as an "unsupported format". DEFLATE
+    masks them: the outer archive must carry exactly one EOCD signature and
+    its members must be compressed, not stored."""
+    client = _make_client(_book(1, "Nested-zip book", TEXT_FILES))
+
+    def download_a_nested_zip(art_id, release_file_id, filename, dest, subscr=False):
+        # Stand in for an epub/audiobook-zip: its bytes contain both a local
+        # header and an end-of-central-directory signature, like a real zip.
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes(b"PK\x03\x04nested book payload PK\x05\x06" + b"\x00" * 18)
+        client.download_calls.append(art_id)
+        return dest
+
+    client.download_file = download_a_nested_zip
+    activity.prepare(client)
+    result = wait_until_idle()
+    assert result["result"] == "done"
+
+    raw = pathlib.Path(result["zip_path"]).read_bytes()
+    assert raw.count(b"PK\x05\x06") == 1  # only the outer archive's own EOCD survives
+    with zipfile.ZipFile(result["zip_path"]) as zf:
+        assert zf.namelist()
+        assert all(info.compress_type == zipfile.ZIP_DEFLATED for info in zf.infolist())
 
 
 # ==========================================================================
