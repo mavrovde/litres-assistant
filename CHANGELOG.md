@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.1.0] - Windows installer (Setup.exe)
+
+Adds a native **Windows** installer, built the same way as macOS: a PyInstaller
+onedir app wrapped by Inno Setup into `Setup.exe`, with Chromium fetched on first
+run. Built on a `windows-latest` CI runner and attached to each release.
+
+### Added
+- **Windows `Setup.exe`.** Download it from the release and run it (unsigned, so
+  SmartScreen → *More info → Run anyway*); BookVault installs to Program Files
+  with a Start-menu shortcut. Requires the WebView2 runtime (present on Windows
+  11 and up-to-date Windows 10). App data lives in `%LOCALAPPDATA%\BookVault`;
+  Chromium caches in `%LOCALAPPDATA%\ms-playwright` (shared, survives reinstall).
+- CI (`.github/workflows/desktop-windows.yml`) builds `Setup.exe` on
+  `windows-latest` on every tag and attaches it to the GitHub Release, and runs
+  as a build check on PRs touching the Windows packaging.
+
 ## [1.0.1] - Fix: the packaged macOS app couldn't launch its browser
 
 The downloadable macOS app failed at login with an "Internal server error".

@@ -154,8 +154,15 @@ open it, and drag **BookVault** to Applications.
   `~/Library/Application Support/BookVault/`; downloads go to
   `~/Downloads/litres-library/`.
 
-> Windows (`.msi`) and Linux (`.AppImage`) installers, plus Homebrew / winget /
-> AUR, are on the way. Until then, run those platforms from source (below).
+### Install (Windows)
+
+Download **[`BookVault-Setup-<version>.exe` from the latest release](https://github.com/mavrovde/bookvault/releases/latest)** and run it. It installs BookVault to `Program Files` with a Start-menu entry (and an optional desktop shortcut).
+
+- **First launch of the installer:** it's an *unsigned* build, so Windows SmartScreen shows a blue "Windows protected your PC" dialog — click **More info → Run anyway**. (Requires the WebView2 runtime, which ships with Windows 11 and up-to-date Windows 10.)
+- **First run of the app:** BookVault downloads Chromium (~150 MB) once — the splash shows progress — cached under `%LOCALAPPDATA%\ms-playwright` (survives reinstalls). App data lives in `%LOCALAPPDATA%\BookVault`.
+
+> Linux (`.AppImage`) installers, plus Homebrew / winget / AUR, are on the way.
+> Until then, run Linux from source (below).
 
 ### Run from source (any OS)
 
